@@ -1,0 +1,22 @@
+{
+    "name": "gpt",
+    "build": {
+		"dockerfile": "Dockerfile"
+	},
+	"runArgs": [
+        "--gpus=all"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+				"GitHub.copilot",
+				"k--kato.intellij-idea-keybindings",
+				"trinm1709.dracula-theme-from-intellij",
+				"k--kato.intellij-idea-keybindings",
+				"zxh404.vscode-proto3",
+				"ms-python.python",
+				"ms-toolsai.jupyter"
+			]
+        }
+    }
+}
