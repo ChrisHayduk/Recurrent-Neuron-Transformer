@@ -1,29 +1,25 @@
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import GPT2Tokenizer
+from torch.utils.data import Dataset
 
 class ShakespeareDataset(Dataset):
-    def __init__(self, csv_file, seq_length):
-        # Read the CSV file
+    def __init__(self, csv_file, chunk_length, tokenizer):
+        # Read and concatenate text as before
         self.df = pd.read_csv(csv_file)
-
-        # Concatenate all the lines into one large string
         self.all_text = ' '.join(self.df['PlayerLine'].tolist())
 
-        # Initialize the tokenizer (GPT-2 tokenizer as an example)
-        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        
         # Tokenize the text
+        self.tokenizer = tokenizer
         self.tokens = self.tokenizer.encode(self.all_text)
 
-        # Sequence length
-        self.seq_length = seq_length
+        # Set chunk length (2k)
+        self.chunk_length = chunk_length
 
     def __len__(self):
-        return len(self.tokens) - self.seq_length
+        return (len(self.tokens) - self.chunk_length) // self.chunk_length + 1
 
     def __getitem__(self, index):
-        # Fetch a sequence of tokens and its next token (for prediction)
-        return (torch.tensor(self.tokens[index:index+self.seq_length]),
-                torch.tensor(self.tokens[index+1:index+self.seq_length+1]))
+        start = index * self.chunk_length
+        end = start + self.chunk_length
+        return torch.tensor(self.tokens[start:end])
+
