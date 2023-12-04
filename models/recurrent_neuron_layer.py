@@ -12,7 +12,7 @@ class Neurons(nn.Module):
         # Initialize hidden state for batch processing
         self.hidden = nn.Parameter(torch.zeros(1, n_neurons, 1), requires_grad=False)
     
-    def neuron_fn(self, inputs):
+    def forward(self, inputs):
         batch_size = inputs.shape[0]
 
         # Expand hidden to match batch size
@@ -34,24 +34,19 @@ class Neurons(nn.Module):
         # Update hidden state
         self.hidden = nn.Parameter(dot[:, :, -1].unsqueeze(2).detach(), requires_grad=False)
 
-        return dot[:, :, 0], dot
+        return dot[:, :, 0], self.hidden
 
 class RecurrentNeuronLayer(nn.Module):
-    def __init__(self, sizes):
+    def __init__(self, input_size, output_size):
         super(RecurrentNeuronLayer, self).__init__()
-        self.neurons = nn.ModuleList([Neurons(size) for size in sizes])
-        self.weights = nn.ModuleList([nn.Linear(sizes[i], sizes[i + 1]) for i in range(len(sizes) - 1)])
+        self.neurons = Neurons(output_size)
+        self.weights = nn.Linear(input_size, output_size)
 
     def forward(self, x):
-        batch_size = x.shape[0]
-        for i, neuron in enumerate(self.neurons[:-1]):  # Process through all but last layer
-            send, _ = neuron.neuron_fn(x if i == 0 else pre)
-            pre = self.weights[i](send)
-
-        # Process the last layer
-        final_output, _ = self.neurons[-1].neuron_fn(pre)
-
+        batch_size = x.shape[0]      
+        x = self.weights(x)
+        x, hidden_state = self.neurons(x)
         # Reshape the output to ensure it has the shape [batch_size, n_classes]
-        final_output = final_output.view(batch_size, -1)
+        final_output = x.view(batch_size, -1)
 
-        return final_output
+        return final_output, hidden_state
