@@ -74,7 +74,6 @@ if __name__ == '__main__':
     seq_length = 5
     batch_size = 2
     batch_count = 4
-    cwd = os.getcwd()
     file_path = os.path.join(os.getcwd(), 'data/shakespeare', 'tinyshakespeare.txt')
     bpe_tokenizer = 'gpt2'
     vocab_size = 50257
