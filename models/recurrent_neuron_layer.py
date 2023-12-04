@@ -34,7 +34,7 @@ class Neurons(nn.Module):
         # Update hidden state
         self.hidden = nn.Parameter(dot[:, :, -1].unsqueeze(2).detach(), requires_grad=False)
 
-        return dot[:, :, 0], self.hidden
+        return dot[:, :, 0]
 
 class RecurrentNeuronLayer(nn.Module):
     def __init__(self, input_size, output_size):
@@ -47,9 +47,9 @@ class RecurrentNeuronLayer(nn.Module):
         seq_len = x.shape[1]
 
         x = self.weights(x)
-        x, hidden_state = self.neurons(x)
+        x = self.neurons(x)
         
         # Reshape the output to ensure it has the shape [batch_size, n_classes]
         final_output = x.view(batch_size, seq_len, -1)
 
-        return final_output, hidden_state
+        return final_output

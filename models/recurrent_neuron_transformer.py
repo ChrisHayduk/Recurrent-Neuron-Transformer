@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import random
 
-from recurrent_neuron_layer import RecurrentNeuronLayer
+from models.recurrent_neuron_layer import RecurrentNeuronLayer
 
 ####### Do not modify these imports.
 
@@ -44,7 +44,7 @@ class RecurrentNeuronTransformer(nn.Module):
         self.dim_q = dim_q
 
         self.to(device)
-                
+        
         self.embeddingL = nn.Embedding(self.input_size, self.word_embedding_dim)     #initialize word embedding layer
         self.posembeddingL = nn.Embedding(self.max_length, self.word_embedding_dim)    #initialize positional embedding layer
         
@@ -59,7 +59,7 @@ class RecurrentNeuronTransformer(nn.Module):
         self.q2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q)
         
         self.softmax = nn.Softmax(dim=2)
-        self.attention_head_projection = nn.Linear(self.dim_v * self.num_heads, self.hidden_dim)
+        self.attention_head_projection = RecurrentNeuronLayer(self.dim_v * self.num_heads, self.hidden_dim)
         self.norm_mh = nn.LayerNorm(self.hidden_dim)
 
         self.linear1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_feedforward).to(self.device) 
@@ -78,7 +78,7 @@ class RecurrentNeuronTransformer(nn.Module):
 
         :returns: the model outputs. Should be scores of shape (N,T,output_size).
         """
-
+        inputs = inputs.to(self.device)
         outputs = self.embed(inputs)
         outputs = self.multi_head_attention(outputs)
         outputs = self.feedforward_layer(outputs)
