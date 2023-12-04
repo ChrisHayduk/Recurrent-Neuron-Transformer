@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import random
 
-import RecurrentNeuronLayer
+from recurrent_neuron_layer import RecurrentNeuronLayer
 
 ####### Do not modify these imports.
 
