@@ -43,10 +43,13 @@ class RecurrentNeuronLayer(nn.Module):
         self.weights = nn.Linear(input_size, output_size)
 
     def forward(self, x):
-        batch_size = x.shape[0]      
+        batch_size = x.shape[0]
+        seq_len = x.shape[1]
+
         x = self.weights(x)
         x, hidden_state = self.neurons(x)
+        
         # Reshape the output to ensure it has the shape [batch_size, n_classes]
-        final_output = x.view(batch_size, -1)
+        final_output = x.view(batch_size, seq_len, -1)
 
         return final_output, hidden_state
