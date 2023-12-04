@@ -44,9 +44,7 @@ class RecurrentNeuronTransformer(nn.Module):
         self.dim_q = dim_q
 
         self.to(device)
-        
-        seed_torch(0)
-        
+                
         self.embeddingL = nn.Embedding(self.input_size, self.word_embedding_dim)     #initialize word embedding layer
         self.posembeddingL = nn.Embedding(self.max_length, self.word_embedding_dim)    #initialize positional embedding layer
         
@@ -110,7 +108,9 @@ class RecurrentNeuronTransformer(nn.Module):
         Traditionally we'd include a padding mask here, so that pads are ignored.
         This is a simplified implementation.
         """
-        
+        N, T, _ = inputs.shape
+        mask = torch.triu(torch.ones((T, T), device=self.device), diagonal=1).bool()
+
         # Head #1
         k1 = self.k1(inputs)
         v1 = self.v1(inputs)
@@ -118,6 +118,7 @@ class RecurrentNeuronTransformer(nn.Module):
         
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
         term1 = self.softmax(torch.bmm(q1, k1.permute(0,2,1))/((self.dim_k)**0.5))
+        term1.masked_fill_(mask, float('-inf'))  # Mask future tokens
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head1 = torch.bmm(term1, v1)
@@ -129,6 +130,7 @@ class RecurrentNeuronTransformer(nn.Module):
 
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
         term2 = self.softmax(torch.bmm(q2, k2.permute(0,2,1))/((self.dim_k)**0.5))
+        term2.masked_fill_(mask, float('-inf'))  # Mask future tokens
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head2 = torch.bmm(term2, v2)
