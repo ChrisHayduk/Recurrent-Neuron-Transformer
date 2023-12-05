@@ -1,7 +1,7 @@
 # General imports
 import os
 import numpy as np
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import copy
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -38,8 +38,7 @@ def create_look_ahead_mask(size):
 
 # TODO: SHOULD THIS BE IN A UTILS FILE?
 # TODO: CONFIRM THAT RECURRENT TRANSFORMER MODEL HANDLES AND DOES NOT RETURN THE HIDDEN STATE
-def train_shakespeare_transformer(model, context_window, step_size, data_loader, optimizer, num_epochs, 
-                                   device, mask=False):
+def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, device, mask=False):
     """
     Trains a transformer model to reproduce large chunks of Shakespeare's plays by sliding a context window along a 
     larger piece of text. The model is trained to predict the next word in the sequence given the context window.
@@ -61,7 +60,7 @@ def train_shakespeare_transformer(model, context_window, step_size, data_loader,
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
-        for inputs, labels in tqdm(data_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', unit='batch'):
+        for inputs, labels in tqdm(data_loader, total=len(data_loader), desc=f'Training: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
             # Move the data to the device
             input_seq = inputs.to(device)
             target_seq = labels.to(device)

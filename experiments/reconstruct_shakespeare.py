@@ -1,3 +1,12 @@
+"""
+Module containing main training loop for experimentation. Future work should expand upon the training loop to track
+and store metrics, and to save the model at regular intervals.
+
+Lightweight Example usage:
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' 
+--num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_encoder_layers=2 --num_decoder_layers=2 --nhead=1
+"""
+
 # General imports
 import argparse
 import torch
@@ -72,9 +81,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Train the model
-    print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size \
-          {args.max_seq_length}, and step size {args.window_step_size}")
+    print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     
-    train_shakespeare_transformer(model=model, context_window=args.chunk_size, step_size=args.window_step_size, 
-                                  data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
+    train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
                                   device=device, mask=False)
