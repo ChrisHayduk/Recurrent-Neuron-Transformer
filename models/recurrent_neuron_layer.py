@@ -42,7 +42,7 @@ class Neurons(nn.Module):
         dot = torch.relu(torch.matmul(self.params, stacked.unsqueeze(4)).squeeze(4)).to(self.device)
 
         # Update hidden state without in-place operation
-        new_hidden = dot[:, :, :, -1].unsqueeze(3)
+        new_hidden = dot[:, :, :, -1].unsqueeze(3).detach()
 
         self.hidden = new_hidden
 
@@ -61,9 +61,9 @@ class RecurrentNeuronLayer(nn.Module):
         seq_len = x.shape[1]
 
         x = self.weights(x)
-        x, hidden_state = self.neurons(x, hidden_state)
+        x, updated_hidden_state = self.neurons(x, hidden_state)
         
         # Reshape the output to ensure it has the shape [batch_size, n_classes]
         final_output = x.view(batch_size, seq_len, -1)
 
-        return final_output, hidden_state
+        return final_output, updated_hidden_state
