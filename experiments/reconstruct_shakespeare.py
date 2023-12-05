@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default="data/shakespeare/tinyshakespeare.txt", help="Path to the data file")
     parser.add_argument("--chunk_size", type=int, default=2048, help="Size of the vocabulary")
     parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
-    parser.add_argument("--window_step_size", type=int, default=64, help="Size of the vocabulary")
+    parser.add_argument("--window_step_size", type=int, default=1, help="Size of the vocabulary")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # Create the data loader
     data_loader = TextDataLoader(file_path=args.data_path, seq_length=args.chunk_size, bpe_tokenizer=tokenizer, 
-                                 batch_size=args.batch_size, vocab_size=vocab_size, split_ratio=0.8)
+                                 batch_size=args.batch_size, vocab_size=vocab_size)
     train_loader, test_loader = data_loader.create_loaders()
 
     # Confirm model name is valid
@@ -72,7 +72,9 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Train the model
-    print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size} and context window size {args.max_seq_length}")
+    print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size \
+          {args.max_seq_length}, and step size {args.window_step_size}")
+    
     train_shakespeare_transformer(model=model, context_window=args.chunk_size, step_size=args.window_step_size, 
                                   data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
                                   device=device, mask=False)
