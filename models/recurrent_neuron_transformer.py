@@ -43,8 +43,6 @@ class RecurrentNeuronTransformer(nn.Module):
         self.dim_v = dim_v
         self.dim_q = dim_q
 
-        self.to(device)
-        
         self.embeddingL = nn.Embedding(self.input_size, self.word_embedding_dim)     #initialize word embedding layer
         self.posembeddingL = nn.Embedding(self.max_length, self.word_embedding_dim)    #initialize positional embedding layer
         
@@ -67,9 +65,11 @@ class RecurrentNeuronTransformer(nn.Module):
         self.norm_linear = nn.LayerNorm(self.hidden_dim).to(self.device) 
         
         self.linear_output = RecurrentNeuronLayer(self.hidden_dim, self.output_size)
+
+        self.to(device)
         
         
-    def forward(self, inputs):
+    def forward(self, inputs, hidden_layers):
         """
         This function computes the full Transformer forward pass.
         Put together all of the layers you've developed in the correct order.
@@ -80,11 +80,11 @@ class RecurrentNeuronTransformer(nn.Module):
         """
         inputs = inputs.to(self.device)
         outputs = self.embed(inputs)
-        outputs = self.multi_head_attention(outputs)
-        outputs = self.feedforward_layer(outputs)
-        outputs = self.final_layer(outputs)
+        outputs, hidden_layers = self.multi_head_attention(outputs, hidden_layers)
+        outputs, hidden_layers = self.feedforward_layer(outputs, hidden_layers)
+        outputs, hidden_layers = self.final_layer(outputs, hidden_layers)
         
-        return outputs
+        return outputs, hidden_layers
     
     
     def embed(self, inputs):
@@ -100,7 +100,7 @@ class RecurrentNeuronTransformer(nn.Module):
 
         return embeddings
         
-    def multi_head_attention(self, inputs):
+    def multi_head_attention(self, inputs, hidden_layers):
         """
         :param inputs: float32 Tensor of shape (N,T,H)
         :returns outputs: float32 Tensor of shape (N,T,H)
@@ -112,55 +112,58 @@ class RecurrentNeuronTransformer(nn.Module):
         mask = torch.triu(torch.ones((T, T), device=self.device), diagonal=1).bool()
 
         # Head #1
-        k1 = self.k1(inputs)
-        v1 = self.v1(inputs)
-        q1 = self.q1(inputs)
+
+        k1, hidden_layers["k1"] = self.k1(inputs, hidden_layers.get("k1"))
+        v1, hidden_layers["v1"] = self.v1(inputs, hidden_layers.get("v1"))
+        q1, hidden_layers["q1"] = self.q1(inputs, hidden_layers.get("q1"))
         
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
         term1 = self.softmax(torch.bmm(q1, k1.permute(0,2,1))/((self.dim_k)**0.5))
-        term1.masked_fill_(mask, float('-inf'))  # Mask future tokens
+        term1 = term1.masked_fill(mask, float('-inf'))  # Mask future tokens
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head1 = torch.bmm(term1, v1)
 
         # Head #2
-        k2 = self.k2(inputs)
-        v2 = self.v2(inputs)
-        q2 = self.q2(inputs)
+        k2, hidden_layers["k2"] = self.k2(inputs, hidden_layers.get("k2"))
+        v2, hidden_layers["v2"] = self.v2(inputs, hidden_layers.get("v2"))
+        q2, hidden_layers["q2"] = self.q2(inputs, hidden_layers.get("q2"))
 
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
         term2 = self.softmax(torch.bmm(q2, k2.permute(0,2,1))/((self.dim_k)**0.5))
-        term2.masked_fill_(mask, float('-inf'))  # Mask future tokens
+        term2 = term2.masked_fill(mask, float('-inf'))  # Mask future tokens
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head2 = torch.bmm(term2, v2)
 
         full_head = torch.cat((head1, head2), dim=-1)
 
-        proj = self.attention_head_projection(full_head)
+        proj, hidden_layers["proj"] = self.attention_head_projection(full_head, hidden_layers.get("proj"))
 
         outputs = self.norm_mh(proj + inputs)
         
-        return outputs
+        return outputs, hidden_layers
     
     
-    def feedforward_layer(self, inputs):
+    def feedforward_layer(self, inputs, hidden_layers):
         """
         :param inputs: float32 Tensor of shape (N,T,H)
         :returns outputs: float32 Tensor of shape (N,T,H)
         """
+        linear_1_output, hidden_layers["linear1"] = self.linear1(inputs,hidden_layers.get("linear1"))
+        linear_1_output = torch.relu(linear_1_output)
+        linear_2_output, hidden_layers["linear2"] = self.linear2(linear_1_output, hidden_layers.get("linear2"))
+        outputs = self.norm_linear(inputs + linear_2_output)
         
-        outputs = self.norm_linear(inputs + self.linear2(torch.relu(self.linear1(inputs))))
-        
-        return outputs
+        return outputs, hidden_layers
         
     
-    def final_layer(self, inputs):
+    def final_layer(self, inputs, hidden_layers):
         """
         :param inputs: float32 Tensor of shape (N,T,H)
         :returns outputs: float32 Tensor of shape (N,T,V)
         """
         
-        outputs = self.linear_output(inputs)
+        outputs, hidden_layers["linear_output"] = self.linear_output(inputs, hidden_layers.get("linear_output"))
                 
-        return outputs
+        return outputs, hidden_layers

@@ -10,31 +10,38 @@ class Neurons(nn.Module):
         self.params = nn.Parameter(torch.rand(n_neurons, 3, 3) * 2 - 1)
 
         # Initialize hidden state for batch processing
-        self.hidden = nn.Parameter(torch.zeros(1, n_neurons, 1), requires_grad=False)
+        self.register_buffer('hidden', torch.zeros(1, n_neurons, 1))
     
-    def forward(self, inputs):
+    def forward(self, inputs, hidden_state=None):
+        if hidden_state is not None:
+            self.hidden_state = hidden_state
+
         batch_size = inputs.shape[0]
+        seq_len = inputs.shape[1]
 
-        # Expand hidden to match batch size
-        hidden_batch = self.hidden.expand(batch_size, -1, -1)
-
-        # Ensure inputs is 2D: (batch_size, n_neurons)
-        inputs = inputs.view(batch_size, -1, 1)
+        # Expand hidden to match batch size and sequence length
+        hidden_batch = self.hidden.expand(batch_size, seq_len, -1, -1)
+        
+        # Ensure inputs is 3D: (batch_size, seq_len, n_neurons)
+        inputs = inputs.view(batch_size, seq_len, -1, 1)
         ones = torch.ones_like(inputs)
 
         # Concatenate along the second dimension
         stacked = torch.cat((inputs, hidden_batch, ones), dim=1)
 
-        # Reshape stacked for matrix multiplication: [batch_size, n_neurons, 3]
-        stacked = stacked.view(batch_size, self.n_neurons, 3)
+        # Reshape stacked for matrix multiplication: [batch_size, seq_len, n_neurons, 3]
+        stacked = stacked.view(batch_size, seq_len, self.n_neurons, 3)
 
         # Perform matrix multiplication
-        dot = torch.tanh(torch.matmul(self.params, stacked.unsqueeze(3)).squeeze(3))
+        dot = torch.tanh(torch.matmul(self.params, stacked.unsqueeze(4)).squeeze(4))
 
-        # Update hidden state
-        self.hidden = nn.Parameter(dot[:, :, -1].unsqueeze(2).detach(), requires_grad=False)
+        # Update hidden state without in-place operation
+        new_hidden = dot[:, :, :, -1].unsqueeze(2).detach()
+        self.hidden = new_hidden
 
-        return dot[:, :, 0]
+        
+
+        return dot[:, :, :, 0], self.hidden
 
 class RecurrentNeuronLayer(nn.Module):
     def __init__(self, input_size, output_size):
@@ -42,14 +49,14 @@ class RecurrentNeuronLayer(nn.Module):
         self.neurons = Neurons(output_size)
         self.weights = nn.Linear(input_size, output_size)
 
-    def forward(self, x):
+    def forward(self, x, hidden_state=None):
         batch_size = x.shape[0]
         seq_len = x.shape[1]
 
         x = self.weights(x)
-        x = self.neurons(x)
+        x, hidden_state = self.neurons(x, hidden_state)
         
         # Reshape the output to ensure it has the shape [batch_size, n_classes]
         final_output = x.view(batch_size, seq_len, -1)
 
-        return final_output
+        return final_output, hidden_state
