@@ -47,24 +47,24 @@ class RecurrentNeuronTransformer(nn.Module):
         self.posembeddingL = nn.Embedding(self.max_length, self.word_embedding_dim)    #initialize positional embedding layer
         
         # Head #1
-        self.k1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k)
-        self.v1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v)
-        self.q1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q)
+        self.k1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k, self.device)
+        self.v1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v, self.device)
+        self.q1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q, self.device)
         
         # Head #2
-        self.k2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k) 
-        self.v2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v)
-        self.q2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q)
+        self.k2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k, self.device) 
+        self.v2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v, self.device)
+        self.q2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q, self.device)
         
         self.softmax = nn.Softmax(dim=2)
-        self.attention_head_projection = RecurrentNeuronLayer(self.dim_v * self.num_heads, self.hidden_dim)
+        self.attention_head_projection = RecurrentNeuronLayer(self.dim_v * self.num_heads, self.hidden_dim, self.device)
         self.norm_mh = nn.LayerNorm(self.hidden_dim)
 
-        self.linear1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_feedforward).to(self.device) 
-        self.linear2 = RecurrentNeuronLayer(self.dim_feedforward, self.hidden_dim).to(self.device) 
-        self.norm_linear = nn.LayerNorm(self.hidden_dim).to(self.device) 
+        self.linear1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_feedforward, self.device)
+        self.linear2 = RecurrentNeuronLayer(self.dim_feedforward, self.hidden_dim, self.device)
+        self.norm_linear = nn.LayerNorm(self.hidden_dim)
         
-        self.linear_output = RecurrentNeuronLayer(self.hidden_dim, self.output_size)
+        self.linear_output = RecurrentNeuronLayer(self.hidden_dim, self.output_size, self.device)
 
         self.to(device)
         
