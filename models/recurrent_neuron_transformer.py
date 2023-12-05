@@ -112,14 +112,14 @@ class RecurrentNeuronTransformer(nn.Module):
         mask = torch.triu(torch.ones((T, T), device=self.device), diagonal=1).bool()
 
         # Head #1
-
         k1, hidden_layers["k1"] = self.k1(inputs, hidden_layers.get("k1"))
         v1, hidden_layers["v1"] = self.v1(inputs, hidden_layers.get("v1"))
         q1, hidden_layers["q1"] = self.q1(inputs, hidden_layers.get("q1"))
         
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
-        term1 = self.softmax(torch.bmm(q1, k1.permute(0,2,1))/((self.dim_k)**0.5))
+        term1 = torch.bmm(q1, k1.permute(0,2,1))/((self.dim_k)**0.5)
         term1 = term1.masked_fill(mask, float('-inf'))  # Mask future tokens
+        term1 = self.softmax(term1)
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head1 = torch.bmm(term1, v1)
@@ -130,8 +130,9 @@ class RecurrentNeuronTransformer(nn.Module):
         q2, hidden_layers["q2"] = self.q2(inputs, hidden_layers.get("q2"))
 
         # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
-        term2 = self.softmax(torch.bmm(q2, k2.permute(0,2,1))/((self.dim_k)**0.5))
+        term2 = torch.bmm(q2, k2.permute(0,2,1))/((self.dim_k)**0.5)
         term2 = term2.masked_fill(mask, float('-inf'))  # Mask future tokens
+        term2 = self.softmax(term2)
 
         # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
         head2 = torch.bmm(term2, v2)

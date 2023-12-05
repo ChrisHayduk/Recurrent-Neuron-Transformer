@@ -45,7 +45,7 @@ class Neurons(nn.Module):
         new_hidden = dot[:, :, :, -1].unsqueeze(3).detach()
 
         self.hidden = new_hidden
-
+        
         return dot[:, :, :, 0], self.hidden
 
 class RecurrentNeuronLayer(nn.Module):
