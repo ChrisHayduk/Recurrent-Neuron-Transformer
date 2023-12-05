@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--chunk_size", type=int, default=2048, help="Size of the vocabulary")
     parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
     parser.add_argument("--window_step_size", type=int, default=64, help="Size of the vocabulary")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
@@ -38,6 +38,10 @@ if __name__ == "__main__":
     else:
         device = torch.device('cpu')
     print(f"Using device: {device}")
+
+    # If using a CUDA GPU, clear the memory
+    if device == torch.device('cuda'):
+        torch.cuda.empty_cache()
 
     # Create the tokenizer
     tokenizer = 'gpt2'
