@@ -169,20 +169,24 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
 
         for batch_idx, (input_chunk, target_chunk) in enumerate(progress_bar):
             batch_loss = 0
-            hidden_layers = None  # Reset hidden layers for each batch
+            hidden_layers = dict()
 
             for i in range(0, input_chunk.size(1) - context_window, step_size):
+                # Create the input and target sequences
                 input_seq = input_chunk[:, i:i+context_window].to(device)
                 target_seq = target_chunk[:, i+1:i+context_window+1].to(device)
-
+                
+                # Zero the gradients
                 optimizer.zero_grad()
-                outputs, hidden_layers = model(inputs=input_seq, hidden_layers=hidden_layers)
-                outputs = outputs.view(-1, outputs.size(-1))
-                target_seq = target_seq.view(-1)
 
+                # Forward pass
+                outputs, hidden_layers = model(inputs=input_seq, hidden_layers=hidden_layers)
+                outputs = outputs.reshape(-1, outputs.size(-1))
+                target_seq = target_seq.reshape(-1)
+
+                # Calculate loss and backpropagate
                 loss = nn.CrossEntropyLoss()(outputs, target_seq)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
                 batch_loss += loss.item()
@@ -199,17 +203,21 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         with torch.no_grad():
             for input_chunk, target_chunk in tqdm(eval_loader, total=len(eval_loader), desc=f'Validating: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
                 batch_loss = 0
-                hidden_layers = None  # Reset hidden layers for each batch
+                hidden_layers = dict()
 
                 for i in range(0, input_chunk.size(1) - context_window, step_size):
+                    # Create the input and target sequences
                     input_seq = input_chunk[:, i:i+context_window].to(device)
                     target_seq = target_chunk[:, i+1:i+context_window+1].to(device)
 
+                    # Forward pass
                     outputs, hidden_layers = model(inputs=input_seq, hidden_layers=hidden_layers)
-                    outputs = outputs.view(-1, outputs.size(-1))
-                    target_seq = target_seq.view(-1)
+                    outputs = outputs.reshape(-1, outputs.size(-1))
+                    target_seq = target_seq.reshape(-1)
 
+                    # Calculate loss
                     loss = nn.CrossEntropyLoss()(outputs, target_seq)
+
                     batch_loss += loss.item()
 
                 epoch_val_loss += batch_loss / (len(input_chunk) // step_size)
