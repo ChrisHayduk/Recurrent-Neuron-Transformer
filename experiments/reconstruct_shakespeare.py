@@ -81,12 +81,24 @@ if __name__ == "__main__":
     # Create the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    # Define the name of the best model and the loss curves
+    save_model_name = f"{args.model_name}_best_model.pth"
+    save_loss_curves_name = f"{args.model_name}_loss_curves.png"
+    save_losses_csv_name = f"{args.model_name}_losses.csv"
+
     # Train the model
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     
+    # TODO: CHANGE EVAL LOADER TO TEST LOADER
     if args.model_name == 'StatefulTransformer':
-        train_recurrent_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, 
-                                                num_epochs=args.num_epochs, device=device, mask=False)
+        train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                                optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                                mask=False, save_model_name=save_model_name, 
+                                                save_loss_curves_name=save_loss_curves_name, 
+                                                save_losses_csv_name=save_losses_csv_name)
     else:
-        train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
-                                    device=device, mask=False)
+        train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                      optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                      mask=False, save_model_name=save_model_name, 
+                                      save_loss_curves_name=save_loss_curves_name, 
+                                      save_losses_csv_name=save_losses_csv_name)
