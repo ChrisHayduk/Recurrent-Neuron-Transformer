@@ -191,7 +191,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
 
                 batch_loss += loss.item()
 
-            epoch_train_loss += batch_loss / (len(input_chunk) // step_size)
+            epoch_train_loss += batch_loss
             progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
         avg_train_loss = epoch_train_loss / len(train_loader)
@@ -220,7 +220,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
 
                     batch_loss += loss.item()
 
-                epoch_val_loss += batch_loss / (len(input_chunk) // step_size)
+                epoch_val_loss += batch_loss
 
         avg_val_loss = epoch_val_loss / len(eval_loader)
         val_losses.append(avg_val_loss)
