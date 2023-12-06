@@ -149,8 +149,7 @@ class RecurrentNeuronTransformer(nn.Module):
 
         :returns: the model outputs. Should be scores of shape (N,T,output_size).
         """
-        inputs = inputs.to(self.device)
-        
+                
         embeddings = self.embed(inputs)
         x = self.transformer.drop(embeddings)
         for idx, block in enumerate(self.transformer.h):
