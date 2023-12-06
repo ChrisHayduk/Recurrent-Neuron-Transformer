@@ -1,12 +1,106 @@
 import numpy as np
-
+import math
 import torch
 from torch import nn
 import random
-
+import torch.functional as F
+from dataclasses import dataclass
 from models.recurrent_neuron_layer import RecurrentNeuronLayer
 
-####### Do not modify these imports.
+@dataclass
+class ModelConfig:
+    max_length: int = 1024
+    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    n_layer: int = 12
+    num_heads: int = 12
+    hidden_dim: int = 768
+    dropout: float = 0.0
+    device: str = "cuda"
+
+class MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc    = RecurrentNeuronLayer(config.hidden_dim, 4 * config.hidden_dim, config.device)
+        self.gelu    = nn.GELU()
+        self.c_proj  = RecurrentNeuronLayer(4 * config.hidden_dim, config.hidden_dim, config.device)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x, hidden_layers, layer_num=0):
+        x, hidden_layers[f"c_fc_{layer_num}"] = self.c_fc(x, hidden_layers.get(f"c_fc_{layer_num}"))
+        x = self.gelu(x)
+        x, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(x, hidden_layers.get(f"c_proj_{layer_num}"))
+        x = self.dropout(x)
+        return x, hidden_layers
+    
+class RecurrentCausalSelfAttention(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+        assert config.hidden_dim % config.num_heads == 0
+        # key, query, value projections for all heads, but in a batch
+        self.c_attn = RecurrentNeuronLayer(config.hidden_dim, 3 * config.hidden_dim, config.device)
+        # output projection
+        self.c_proj = RecurrentNeuronLayer(config.hidden_dim, config.hidden_dim, config.device)
+        # regularization
+        self.attn_dropout = nn.Dropout(config.dropout)
+        self.resid_dropout = nn.Dropout(config.dropout)
+
+        self.n_head = config.num_heads
+        self.n_embd = config.hidden_dim
+        self.dropout = config.dropout
+        self.max_length = config.max_length
+
+        # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+        if not self.flash:
+            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
+            # causal mask to ensure that attention is only applied to the left in the input sequence
+            self.register_buffer("bias", torch.tril(torch.ones(self.max_length, self.max_length))
+                                        .view(1, 1, self.max_length, self.max_length))
+
+    def forward(self, x, hidden_layers, layer_num=0):
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        proj_output, hidden_layers[f"c_attn_{layer_num}"]  = self.c_attn(x, hidden_layers.get(f"c_attn_{layer_num}"))
+        q, k, v = proj_output.split(self.n_embd, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
+        else:
+            # manual implementation of attention
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+
+        # output projection
+        y, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(y, hidden_layers.get(f"c_proj_{layer_num}"))
+        y = self.resid_dropout(y)
+        return y, hidden_layers
+    
+class RecurrrentTransformerBlock(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(config.hidden_dim)
+        self.attn = RecurrentCausalSelfAttention(config)
+        self.ln_2 = nn.LayerNorm(config.hidden_dim)
+        self.mlp = MLP(config)
+
+    def forward(self, x, hidden_layers, layer_num = 0):
+        new_x, hidden_layers = self.attn(self.ln_1(x), hidden_layers, layer_num)
+        x = x + new_x
+        new_x, hidden_layers = self.mlp(self.ln_2(x), hidden_layers, layer_num)
+        x = x + new_x
+        return x, hidden_layers
 
 class RecurrentNeuronTransformer(nn.Module):
     """
@@ -17,56 +111,33 @@ class RecurrentNeuronTransformer(nn.Module):
     sequences of length T, has an hidden dimension of H, uses word vectors
     also of dimension H, and operates on minibatches of size N.
     """
-    def __init__(self, input_size, output_size, device, hidden_dim=128, num_heads=2, dim_feedforward=2048, dim_k=96, dim_v=96, dim_q=96, max_length=43):
+    def __init__(self, config):
         """
-        :param input_size: the size of the input, which equals to the number of words in source language vocabulary
-        :param output_size: the size of the output, which equals to the number of words in target language vocabulary
-        :param hidden_dim: the dimensionality of the output embeddings that go into the final layer
-        :param num_heads: the number of Transformer heads to use
-        :param dim_feedforward: the dimension of the feedforward network model
-        :param dim_k: the dimensionality of the key vectors
-        :param dim_q: the dimensionality of the query vectors
-        :param dim_v: the dimensionality of the value vectors
+        :config
         """
         super(RecurrentNeuronTransformer, self).__init__()
-        assert hidden_dim % num_heads == 0
+        assert config.hidden_dim % config.num_heads == 0
         
-        self.num_heads = num_heads
-        self.word_embedding_dim = hidden_dim
-        self.hidden_dim = hidden_dim
-        self.dim_feedforward = dim_feedforward
-        self.max_length = max_length
-        self.input_size = input_size
-        self.output_size = output_size
-        self.device = device
-        self.dim_k = dim_k
-        self.dim_v = dim_v
-        self.dim_q = dim_q
+        self.num_heads = config.num_heads
+        self.word_embedding_dim = config.hidden_dim
+        self.hidden_dim = config.hidden_dim
+        self.max_length = config.max_length
+        self.vocab_size = config.vocab_size
+        self.device = config.device
+        self.dropout = config.dropout
 
-        self.embeddingL = nn.Embedding(self.input_size, self.word_embedding_dim)     #initialize word embedding layer
-        self.posembeddingL = nn.Embedding(self.max_length, self.word_embedding_dim)    #initialize positional embedding layer
-        
-        # Head #1
-        self.k1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k, self.device)
-        self.v1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v, self.device)
-        self.q1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q, self.device)
-        
-        # Head #2
-        self.k2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_k, self.device) 
-        self.v2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_v, self.device)
-        self.q2 = RecurrentNeuronLayer(self.hidden_dim, self.dim_q, self.device)
-        
-        self.softmax = nn.Softmax(dim=2)
-        self.attention_head_projection = RecurrentNeuronLayer(self.dim_v * self.num_heads, self.hidden_dim, self.device)
-        self.norm_mh = nn.LayerNorm(self.hidden_dim)
+        self.transformer = nn.ModuleDict(dict(
+            wte = nn.Embedding(self.vocab_size, self.word_embedding_dim),
+            wpe = nn.Embedding(self.max_length, self.word_embedding_dim),
+            drop = nn.Dropout(self.dropout),
+            h = nn.ModuleList([RecurrrentTransformerBlock(config) for _ in range(config.n_layer)]),
+            ln_f = nn.LayerNorm(self.hidden_dim),
+        ))
 
-        self.linear1 = RecurrentNeuronLayer(self.hidden_dim, self.dim_feedforward, self.device)
-        self.linear2 = RecurrentNeuronLayer(self.dim_feedforward, self.hidden_dim, self.device)
-        self.norm_linear = nn.LayerNorm(self.hidden_dim)
-        
-        self.linear_output = RecurrentNeuronLayer(self.hidden_dim, self.output_size, self.device)
+               
+        self.lm_head = RecurrentNeuronLayer(self.hidden_dim, self.vocab_size, self.device)
 
-        self.to(device)
+        self.to(self.device)
         
         
     def forward(self, inputs, hidden_layers):
@@ -79,10 +150,14 @@ class RecurrentNeuronTransformer(nn.Module):
         :returns: the model outputs. Should be scores of shape (N,T,output_size).
         """
         inputs = inputs.to(self.device)
-        outputs = self.embed(inputs)
-        outputs, hidden_layers = self.multi_head_attention(outputs, hidden_layers)
-        outputs, hidden_layers = self.feedforward_layer(outputs, hidden_layers)
-        outputs, hidden_layers = self.final_layer(outputs, hidden_layers)
+        
+        embeddings = self.embed(inputs)
+        x = self.transformer.drop(embeddings)
+        for idx, block in enumerate(self.transformer.h):
+            x, hidden_layers = block(x, hidden_layers, idx)
+        x = self.transformer.ln_f(x)
+        outputs, hidden_layers["lm_output"] = self.lm_head(x, hidden_layers.get("lm_output"))
+
         
         return outputs, hidden_layers
     
@@ -93,78 +168,9 @@ class RecurrentNeuronTransformer(nn.Module):
         :returns embeddings: floatTensor of shape (N,T,H)
         """
       
-        embeddings = self.embeddingL(inputs)
-        pos_indices = torch.arange(0, inputs.size(1), device=self.device).unsqueeze(0).repeat(inputs.size(0), 1)
-        pos_embeddings = self.posembeddingL(pos_indices)
-        embeddings  = embeddings + pos_embeddings
+        pos = torch.arange(0, self.max_length, dtype=torch.long, device=self.device) # shape (t)
+        tok_emb = self.transformer.wte(inputs) # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
+        embeddings  = tok_emb + pos_emb
 
         return embeddings
-        
-    def multi_head_attention(self, inputs, hidden_layers):
-        """
-        :param inputs: float32 Tensor of shape (N,T,H)
-        :returns outputs: float32 Tensor of shape (N,T,H)
-        
-        Traditionally we'd include a padding mask here, so that pads are ignored.
-        This is a simplified implementation.
-        """
-        N, T, _ = inputs.shape
-        mask = torch.triu(torch.ones((T, T), device=self.device), diagonal=1).bool()
-
-        # Head #1
-        k1, hidden_layers["k1"] = self.k1(inputs, hidden_layers.get("k1"))
-        v1, hidden_layers["v1"] = self.v1(inputs, hidden_layers.get("v1"))
-        q1, hidden_layers["q1"] = self.q1(inputs, hidden_layers.get("q1"))
-        
-        # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
-        term1 = torch.bmm(q1, k1.permute(0,2,1))/((self.dim_k)**0.5)
-        term1 = term1.masked_fill(mask, float('-inf'))  # Mask future tokens
-        term1 = self.softmax(term1)
-
-        # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
-        head1 = torch.bmm(term1, v1)
-
-        # Head #2
-        k2, hidden_layers["k2"] = self.k2(inputs, hidden_layers.get("k2"))
-        v2, hidden_layers["v2"] = self.v2(inputs, hidden_layers.get("v2"))
-        q2, hidden_layers["q2"] = self.q2(inputs, hidden_layers.get("q2"))
-
-        # N x T x H -> N x T x T. Gives a distribution of similarity comparing each token to all other tokens in the sequence
-        term2 = torch.bmm(q2, k2.permute(0,2,1))/((self.dim_k)**0.5)
-        term2 = term2.masked_fill(mask, float('-inf'))  # Mask future tokens
-        term2 = self.softmax(term2)
-
-        # N x T x T -> N x T x H. Uses distribution in term1 to take a weighted sum of v1
-        head2 = torch.bmm(term2, v2)
-
-        full_head = torch.cat((head1, head2), dim=-1)
-
-        proj, hidden_layers["proj"] = self.attention_head_projection(full_head, hidden_layers.get("proj"))
-
-        outputs = self.norm_mh(proj + inputs)
-        
-        return outputs, hidden_layers
-    
-    
-    def feedforward_layer(self, inputs, hidden_layers):
-        """
-        :param inputs: float32 Tensor of shape (N,T,H)
-        :returns outputs: float32 Tensor of shape (N,T,H)
-        """
-        linear_1_output, hidden_layers["linear1"] = self.linear1(inputs,hidden_layers.get("linear1"))
-        linear_1_output = torch.relu(linear_1_output)
-        linear_2_output, hidden_layers["linear2"] = self.linear2(linear_1_output, hidden_layers.get("linear2"))
-        outputs = self.norm_linear(inputs + linear_2_output)
-        
-        return outputs, hidden_layers
-        
-    
-    def final_layer(self, inputs, hidden_layers):
-        """
-        :param inputs: float32 Tensor of shape (N,T,H)
-        :returns outputs: float32 Tensor of shape (N,T,V)
-        """
-        
-        outputs, hidden_layers["linear_output"] = self.linear_output(inputs, hidden_layers.get("linear_output"))
-                
-        return outputs, hidden_layers
