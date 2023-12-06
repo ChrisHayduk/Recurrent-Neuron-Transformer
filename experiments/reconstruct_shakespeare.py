@@ -88,8 +88,6 @@ if __name__ == "__main__":
 
     # Train the model
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
-    
-    # TODO: CHANGE EVAL LOADER TO TEST LOADER
     if args.model_name == 'StatefulTransformer':
         train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                                 optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
