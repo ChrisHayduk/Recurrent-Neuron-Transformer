@@ -15,7 +15,7 @@ import torch
 from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.transformer_model import TransformerModel
-from utils.training import train_shakespeare_transformer
+from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -83,5 +83,9 @@ if __name__ == "__main__":
     # Train the model
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     
-    train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
-                                  device=device, mask=False)
+    if args.model_name == 'StatefulTransformer':
+        train_recurrent_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, 
+                                                num_epochs=args.num_epochs, device=device, mask=False)
+    else:
+        train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
+                                    device=device, mask=False)

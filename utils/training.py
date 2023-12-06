@@ -36,8 +36,6 @@ def create_look_ahead_mask(size):
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
 
 
-# TODO: SHOULD THIS BE IN A UTILS FILE?
-# TODO: CONFIRM THAT RECURRENT TRANSFORMER MODEL HANDLES AND DOES NOT RETURN THE HIDDEN STATE
 def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, device, mask=False):
     """
     Trains a transformer model to reproduce large chunks of Shakespeare's plays by sliding a context window along a 
@@ -60,7 +58,8 @@ def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, dev
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
-        for inputs, labels in tqdm(data_loader, total=len(data_loader), desc=f'Training: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
+        for inputs, labels in tqdm(data_loader, total=len(data_loader), 
+                                   desc=f'Training: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
             # Move the data to the device
             input_seq = inputs.to(device)
             target_seq = labels.to(device)
@@ -89,3 +88,47 @@ def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, dev
             epoch_loss += loss.item()
 
         print(f"Epoch {epoch+1}/{num_epochs} completed. Loss: {epoch_loss/len(data_loader)}")
+
+
+def train_recurrent_shakespeare_transformer(model, context_window, step_size, data_loader, optimizer, num_epochs, 
+                                            device='cuda', mask=False):
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0
+        progress_bar = tqdm(data_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False)
+
+        for batch_idx, (input_chunk, target_chunk) in enumerate(progress_bar):
+            # Initialize batch loss
+            batch_loss = 0
+
+            # Reset hidden layers at the start of each batch
+            hidden_layers = dict()
+
+            for i in range(0, input_chunk.size(1) - context_window, step_size):
+                print(f"Chunk starting at position {i} in batch {batch_idx}")
+
+                # Create input and target sequences
+                input_seq = input_chunk[:, i:i+context_window].to(device)
+                target_seq = target_chunk[:, i+1:i+context_window+1].to(device)
+
+                # Forward pass
+                optimizer.zero_grad()
+                outputs, hidden_layers = model(inputs=input_seq, hidden_layers=hidden_layers)
+                outputs = outputs.view(-1, outputs.size(-1))
+                target_seq = target_seq.view(-1)
+
+                # Calculate loss
+                loss = nn.CrossEntropyLoss()(outputs, target_seq)
+                loss.backward()  # Backpropagate on each loss
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+
+                batch_loss += loss.item()  # Accumulate the scalar loss
+
+            # Update running loss for the epoch
+            epoch_loss += batch_loss
+
+            # Update progress bar
+            progress_bar.set_postfix(loss=epoch_loss / (batch_idx + 1))
+
+        print(f"Epoch {epoch+1}/{num_epochs} completed. Average batch loss: {epoch_loss / len(data_loader)}")
