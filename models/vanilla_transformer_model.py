@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class TransformerModel(nn.Module):
-    def __init__(self, vocab_size, max_seq_length, d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=2048):
+class VanillaTransformerModel(nn.Module):
+    def __init__(self, vocab_size, max_seq_length, d_model=512, nhead=8, num_decoder_layers=6, dim_feedforward=2048):
         super().__init__()
         self.d_model = d_model
 
@@ -14,23 +14,21 @@ class TransformerModel(nn.Module):
         # Positional encoding
         self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
 
-        # Transformer
-        transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward)
+        # Transformer Decoder
         transformer_decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward)
-        self.transformer_encoder = nn.TransformerEncoder(transformer_encoder_layer, num_layers=num_encoder_layers)
         self.transformer_decoder = nn.TransformerDecoder(transformer_decoder_layer, num_layers=num_decoder_layers)
 
         # Output layer
         self.out = nn.Linear(d_model, vocab_size)
 
-    def forward(self, src, tgt, tgt_mask=None):
-        src = self.embedding(src) * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
-
+    def forward(self, tgt, tgt_mask=None):
         tgt = self.embedding(tgt) * math.sqrt(self.d_model)
         tgt = self.pos_encoder(tgt)
 
-        memory = self.transformer_encoder(src)
+        # Initialize empty memory of zeros
+        memory = torch.zeros(tgt.size(0), tgt.size(1), self.d_model, device=tgt.device)
+
+        # Since it's a decoder-only model, no encoder and memory
         output = self.transformer_decoder(tgt, memory, tgt_mask=tgt_mask)
         output = self.out(output)
         return output
