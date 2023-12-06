@@ -137,7 +137,38 @@ class RecurrentNeuronTransformer(nn.Module):
                
         self.lm_head = RecurrentNeuronLayer(self.hidden_dim, self.vocab_size, self.device)
 
-        self.to(self.device)
+        # init all weights
+        self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+
+        # report number of parameters
+        print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+
+    def get_num_params(self, non_embedding=True):
+        """
+        Return the number of parameters in the model.
+        For non-embedding count (default), the position embeddings get subtracted.
+        The token embeddings would too, except due to the parameter sharing these
+        params are actually used as weights in the final layer, so we include them.
+        """
+        n_params = sum(p.numel() for p in self.parameters())
+        if non_embedding:
+            n_params -= self.transformer.wpe.weight.numel()
+        return n_params
+
+    def _init_weights(self, module):
+        if isinstance(module, RecurrentNeuronLayer):
+            neuron_module = module.neurons
+            torch.nn.init.normal_(neuron_module.params, mean=0.0, std=0.02)
+            linear_module = module.weights
+            torch.nn.init.normal_(linear_module.weight, mean=0.0, std=0.02)
+            if linear_module.bias is not None:
+                torch.nn.init.zeros_(linear_module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         
         
     def forward(self, inputs, hidden_layers):
@@ -149,8 +180,7 @@ class RecurrentNeuronTransformer(nn.Module):
 
         :returns: the model outputs. Should be scores of shape (N,T,output_size).
         """
-        inputs = inputs.to(self.device)
-        
+
         embeddings = self.embed(inputs)
         x = self.transformer.drop(embeddings)
         for idx, block in enumerate(self.transformer.h):
@@ -174,3 +204,30 @@ class RecurrentNeuronTransformer(nn.Module):
         embeddings  = tok_emb + pos_emb
 
         return embeddings
+    
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, hidden_layers = None, temperature=1.0, top_k=None):
+        """
+        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
+        the sequence max_new_tokens times, feeding the predictions back into the model each time.
+        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        """
+        for _ in range(max_new_tokens):
+            # if the sequence context is growing too long we must crop it at block_size
+            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
+            # forward the model to get the logits for the index in the sequence
+            logits, hidden_layers = self(idx_cond, hidden_layers)
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # sample from the distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        return idx
