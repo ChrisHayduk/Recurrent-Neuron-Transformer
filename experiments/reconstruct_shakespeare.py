@@ -3,8 +3,7 @@ Module containing main training loop for experimentation. Future work should exp
 and store metrics, and to save the model at regular intervals.
 
 Lightweight Example usage:
-python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' 
---num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_encoder_layers=2 --num_decoder_layers=2 --nhead=1
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
 """
 
 # General imports
@@ -14,7 +13,7 @@ import torch
 # Imports for the tokenizer, the dataset, and the model
 from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
-from models.transformer_model import TransformerModel
+from models.vanilla_transformer_model import VanillaTransformerModel
 from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
 
 # Set random seed for reproducibility
@@ -34,7 +33,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
-    parser.add_argument("--num_encoder_layers", type=int, default=6, help="Number of encoder layers")
     parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
     parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
     args = parser.parse_args()
@@ -67,13 +65,16 @@ if __name__ == "__main__":
     
     # Create the model
     if args.model_name == 'VanillaTransformer':
-        model = TransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=512, nhead=args.nhead, 
-                                 num_encoder_layers=args.num_encoder_layers, num_decoder_layers=args.num_decoder_layers, 
-                                 dim_feedforward=args.dim_feedforward).to(device)
+        model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=512, nhead=args.nhead, 
+                                        num_decoder_layers=args.num_decoder_layers, 
+                                        dim_feedforward=args.dim_feedforward).to(device)
+        
     elif args.model_name == 'StatefulTransformer':
         raise NotImplementedError
+    
     elif args.model_name == 'NanoGPT':
         raise NotImplementedError
+    
     elif args.model_name == 'TransformerXL':
         raise NotImplementedError
     

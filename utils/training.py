@@ -17,7 +17,7 @@ from torch.utils.data import TensorDataset, DataLoader
 # Imports for the tokenizer, the dataset, and the model
 from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
-from models.transformer_model import TransformerModel
+from models.vanilla_transformer_model import TransformerModel
 
 
 
@@ -75,7 +75,7 @@ def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, dev
             optimizer.zero_grad()
 
             # Forward pass
-            outputs = model(input_seq, target_seq, tgt_mask=target_seq_mask)
+            outputs = model(input_seq, tgt_mask=target_seq_mask)
             outputs = outputs.view(-1, outputs.size(-1))
             target_seq = target_seq.view(-1)
 
