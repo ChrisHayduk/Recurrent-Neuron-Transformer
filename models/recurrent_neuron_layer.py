@@ -9,8 +9,6 @@ class Neurons(nn.Module):
         # Initialize matrix neuron parameters and number of neurons to create
         self.n_neurons = n_neurons
         self.params = nn.Parameter(torch.rand(n_neurons, 3, 3) * 2 - 1)   
-
-        self.to(self.device)
     
     def forward(self, inputs, hidden_state=None):
         if hidden_state is not None:
@@ -47,7 +45,6 @@ class RecurrentNeuronLayer(nn.Module):
         self.weights = nn.Linear(input_size, output_size)
         self.device = device
 
-        self.to(self.device)
     def forward(self, x, hidden_state=None):
         batch_size = x.shape[0]
         seq_len = x.shape[1]
