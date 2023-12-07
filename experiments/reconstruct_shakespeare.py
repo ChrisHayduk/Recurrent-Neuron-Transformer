@@ -4,6 +4,9 @@ and store metrics, and to save the model at regular intervals.
 
 Lightweight Example usage:
 python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
+
+NanoGPT Example usage:
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1 --model_name=NanoGPT
 """
 
 # General imports
@@ -14,7 +17,8 @@ import torch
 from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformerModel
-from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
+from models.nanogpt_model import NanoGPT, GPTConfig
+from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, train_nanogpt
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -56,7 +60,7 @@ if __name__ == "__main__":
 
     # Create the data loader
     data_loader = TextDataLoader(file_path=args.data_path, seq_length=args.chunk_size, bpe_tokenizer=tokenizer, 
-                                 batch_size=args.batch_size, vocab_size=vocab_size)
+                                 batch_size=args.batch_size, vocab_size=vocab_size, device=device)
     train_loader, test_loader = data_loader.create_loaders()
 
     # Confirm model name is valid
@@ -73,7 +77,16 @@ if __name__ == "__main__":
         raise NotImplementedError
     
     elif args.model_name == 'NanoGPT':
-        raise NotImplementedError
+        block_size = 1024
+        n_layer = 12
+        n_head = 12
+        n_embd = 768
+        dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
+        bias = False # do we use bias inside LayerNorm and Linear layers?
+        model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+                          bias=bias, vocab_size=vocab_size, dropout=dropout) # start with model_args from command line
+        gptconf = GPTConfig(**model_args)
+        model = NanoGPT(gptconf).to(device)
     
     elif args.model_name == 'TransformerXL':
         raise NotImplementedError
@@ -94,6 +107,8 @@ if __name__ == "__main__":
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
+    elif args.model_name == 'NanoGPT':
+        train_nanogpt(model, 'cuda', train_loader, test_loader)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
