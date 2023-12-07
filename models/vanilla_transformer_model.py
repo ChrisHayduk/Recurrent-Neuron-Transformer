@@ -21,6 +21,15 @@ class VanillaTransformerModel(nn.Module):
         # Output layer
         self.out = nn.Linear(d_model, vocab_size)
 
+        # Report number of parameters
+        print("Number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+
+    def get_num_params(self):
+        num_params = 0
+        for param in self.parameters():
+            num_params += param.numel()
+        return num_params
+
     def forward(self, tgt, tgt_mask=None):
         tgt = self.embedding(tgt) * math.sqrt(self.d_model)
         tgt = self.pos_encoder(tgt)

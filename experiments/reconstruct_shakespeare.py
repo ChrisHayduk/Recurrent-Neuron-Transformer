@@ -10,10 +10,11 @@ python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tiny
 import argparse
 import torch
 
-# Imports for the tokenizer, the dataset, and the model
+# Imports for the tokenizer, the dataset, and models
 from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformerModel
+from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
 from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
 
 # Set random seed for reproducibility
@@ -28,13 +29,16 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default="data/shakespeare/tinyshakespeare.txt", help="Path to the data file")
     parser.add_argument("--chunk_size", type=int, default=2048, help="Size of the vocabulary")
     parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
+    parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
+    parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
+    parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
+    parser.add_argument("--dmodel", type=int, default=512, help="Dimension of the model")
+    parser.add_argument("--drouput", type=float, default=0.1, help="Dropout probability")
+    parser.add_argument("--split_ratio", type=float, default=0.8, help="Ratio of train to test data")
     parser.add_argument("--window_step_size", type=int, default=1, help="Size of the vocabulary")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
-    parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
-    parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
     args = parser.parse_args()
 
     # Define the device
@@ -56,7 +60,8 @@ if __name__ == "__main__":
 
     # Create the data loader
     data_loader = TextDataLoader(file_path=args.data_path, seq_length=args.chunk_size, bpe_tokenizer=tokenizer, 
-                                 batch_size=args.batch_size, vocab_size=vocab_size)
+                                 batch_size=args.batch_size, vocab_size=vocab_size, split_ratio=args.split_ratio, 
+                                 device=device)
     train_loader, test_loader = data_loader.create_loaders()
 
     # Confirm model name is valid
@@ -65,12 +70,15 @@ if __name__ == "__main__":
     
     # Create the model
     if args.model_name == 'VanillaTransformer':
-        model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=512, nhead=args.nhead, 
-                                        num_decoder_layers=args.num_decoder_layers, 
+        model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=args.dmodel, 
+                                        nhead=args.nhead, num_decoder_layers=args.num_decoder_layers, 
                                         dim_feedforward=args.dim_feedforward).to(device)
         
     elif args.model_name == 'StatefulTransformer':
-        raise NotImplementedError
+        model_config = ModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
+                                   n_layer=args.num_decoder_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
+                                   dropout=args.drouput, device=device)
+        model = RecurrentNeuronTransformer(config=model_config).to(device)
     
     elif args.model_name == 'NanoGPT':
         raise NotImplementedError
@@ -90,12 +98,14 @@ if __name__ == "__main__":
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     if args.model_name == 'StatefulTransformer':
         train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                                context_window=args.max_seq_length, step_size=args.window_step_size,
                                                 optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                      context_window=args.max_seq_length, step_size=args.window_step_size,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
                                       mask=False, save_model_name=save_model_name, 
                                       save_loss_curves_name=save_loss_curves_name, 
