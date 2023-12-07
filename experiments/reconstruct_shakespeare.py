@@ -34,6 +34,7 @@ if __name__ == "__main__":
     parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
     parser.add_argument("--dmodel", type=int, default=512, help="Dimension of the model")
     parser.add_argument("--drouput", type=float, default=0.1, help="Dropout probability")
+    parser.add_argument("--split_ratio", type=float, default=0.8, help="Ratio of train to test data")
     parser.add_argument("--window_step_size", type=int, default=1, help="Size of the vocabulary")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
@@ -59,7 +60,8 @@ if __name__ == "__main__":
 
     # Create the data loader
     data_loader = TextDataLoader(file_path=args.data_path, seq_length=args.chunk_size, bpe_tokenizer=tokenizer, 
-                                 batch_size=args.batch_size, vocab_size=vocab_size, device=device)
+                                 batch_size=args.batch_size, vocab_size=vocab_size, split_ratio=args.split_ratio, 
+                                 device=device)
     train_loader, test_loader = data_loader.create_loaders()
 
     # Confirm model name is valid
@@ -103,6 +105,7 @@ if __name__ == "__main__":
                                                 save_losses_csv_name=save_losses_csv_name)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                      context_window=args.max_seq_length, step_size=args.window_step_size,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
                                       mask=False, save_model_name=save_model_name, 
                                       save_loss_curves_name=save_loss_curves_name, 

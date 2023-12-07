@@ -24,9 +24,9 @@ def create_look_ahead_mask(size):
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
 
 
-def train_shakespeare_transformer(model, train_loader, eval_loader, optimizer, num_epochs, device, mask=False,
-                                  save_model_name='best_model.pth', save_loss_curves_name='loss_curves.png',
-                                  save_losses_csv_name='losses.csv'):
+def train_shakespeare_transformer(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs, 
+                                  device, mask=False, save_model_name='best_model.pth', 
+                                  save_loss_curves_name='loss_curves.png', save_losses_csv_name='losses.csv'):
     """
     Trains and validates a transformer model. Saves the best model based on validation loss and plots training curves.
 
@@ -52,53 +52,79 @@ def train_shakespeare_transformer(model, train_loader, eval_loader, optimizer, n
     loss_records = []
 
     for epoch in range(num_epochs):
-
-        # Training Phase
         model.train()
         epoch_train_loss = 0
-        for inputs, labels in tqdm(train_loader, total=len(train_loader), desc=f'Training: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
-            input_seq = inputs.to(device)
-            target_seq = labels.to(device)
+        train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
 
-            if mask:
-                target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
-                target_seq_mask = target_seq_mask.unsqueeze(0)
-            else:
-                target_seq_mask = None
+        for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
+            batch_loss = 0
 
-            optimizer.zero_grad()
-            outputs = model(input_seq, tgt_mask=target_seq_mask)
-            outputs = outputs.view(-1, outputs.size(-1))
-            target_seq = target_seq.view(-1)
-            loss = nn.CrossEntropyLoss()(outputs, target_seq)
-            loss.backward()
-            optimizer.step()
+            for i in range(0, input_chunk.size(1) - context_window, step_size):
 
-            epoch_train_loss += loss.item()
-        
+                # Create the input and target sequences
+                input_seq = input_chunk[:, i:i+context_window].to(device)
+                target_seq = target_chunk[:, i+1:i+context_window+1].to(device)
+
+                # Optionally mask the target sequence
+                if mask:
+                    target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
+                    target_seq_mask = target_seq_mask.unsqueeze(0)
+                else:
+                    target_seq_mask = None
+                
+                # Zero the gradients
+                optimizer.zero_grad()
+
+                # Forward pass
+                outputs = model(input_seq, tgt_mask=target_seq_mask)
+                outputs = outputs.reshape(-1, outputs.size(-1))
+                target_seq = target_seq.reshape(-1)
+
+                # Calculate loss and backpropagate
+                loss = nn.CrossEntropyLoss()(outputs, target_seq)
+                loss.backward()
+                optimizer.step()
+
+                batch_loss += loss.item()
+
+            epoch_train_loss += batch_loss
+            train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+
         avg_train_loss = epoch_train_loss / len(train_loader)
         train_losses.append(avg_train_loss)
 
         # Validation Phase
         model.eval()
         epoch_val_loss = 0
+        eval_progress_bar = tqdm(train_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
         with torch.no_grad():
-            for inputs, labels in tqdm(eval_loader, total=len(eval_loader), desc=f'Validating: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
-                input_seq = inputs.to(device)
-                target_seq = labels.to(device)
+            for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
+                batch_loss = 0
 
-                if mask:
-                    target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
-                    target_seq_mask = target_seq_mask.unsqueeze(0)
-                else:
-                    target_seq_mask = None
+                for i in range(0, input_chunk.size(1) - context_window, step_size):
+                    # Create the input and target sequences
+                    input_seq = input_chunk[:, i:i+context_window].to(device)
+                    target_seq = target_chunk[:, i+1:i+context_window+1].to(device)
 
-                outputs = model(input_seq, tgt_mask=target_seq_mask)
-                outputs = outputs.view(-1, outputs.size(-1))
-                target_seq = target_seq.view(-1)
-                loss = nn.CrossEntropyLoss()(outputs, target_seq)
+                    # Optionally mask the target sequence
+                    if mask:
+                        target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
+                        target_seq_mask = target_seq_mask.unsqueeze(0)
+                    else:
+                        target_seq_mask = None
 
-                epoch_val_loss += loss.item()
+                    # Forward pass
+                    outputs = model(input_seq, tgt_mask=target_seq_mask)
+                    outputs = outputs.reshape(-1, outputs.size(-1))
+                    target_seq = target_seq.reshape(-1)
+
+                    # Calculate loss
+                    loss = nn.CrossEntropyLoss()(outputs, target_seq)
+
+                    batch_loss += loss.item()
+
+                epoch_val_loss += batch_loss
+                eval_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
         avg_val_loss = epoch_val_loss / len(eval_loader)
         val_losses.append(avg_val_loss)
@@ -165,9 +191,9 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
     for epoch in range(num_epochs):
         model.train()
         epoch_train_loss = 0
-        progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
+        train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
 
-        for batch_idx, (input_chunk, target_chunk) in enumerate(progress_bar):
+        for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
             batch_loss = 0
             hidden_layers = dict()
 
@@ -192,7 +218,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                 batch_loss += loss.item()
 
             epoch_train_loss += batch_loss
-            progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+            train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
         avg_train_loss = epoch_train_loss / len(train_loader)
         train_losses.append(avg_train_loss)
@@ -200,8 +226,9 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         # Validation Phase
         model.eval()
         epoch_val_loss = 0
+        eval_progress_bar = tqdm(train_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
         with torch.no_grad():
-            for input_chunk, target_chunk in tqdm(eval_loader, total=len(eval_loader), desc=f'Validating: Epoch {epoch+1}/{num_epochs}', unit='batch', leave=False):
+            for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
                 hidden_layers = dict()
 
@@ -221,9 +248,11 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                     batch_loss += loss.item()
 
                 epoch_val_loss += batch_loss
+                eval_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
         avg_val_loss = epoch_val_loss / len(eval_loader)
         val_losses.append(avg_val_loss)
+
 
         # Create dictionary of loss records, append to list of results
         loss_records.append({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
