@@ -75,4 +75,4 @@ class TransformerXLModel(nn.Module):
         for layer in self.encoder:
             x, mems = layer(x, tgt_mask=tgt_mask, mems=mems)
         x = self.dropout(x)
-        return self.linear(x),
+        return self.linear(x), mems
