@@ -136,7 +136,7 @@ def train_shakespeare_transformer(model, train_loader, eval_loader, optimizer, n
     plt.show()
 
 
-def train_nanogpt(model, device, train_data_loader, val_data_loader, max_iters):
+def train_nanogpt(model, device, train_data_loader, val_data_loader, max_iters, batch_size):
     device_type = 'cuda' if 'cuda' in str(device) else 'cpu'
     weight_decay=1e-1
     dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
@@ -147,16 +147,13 @@ def train_nanogpt(model, device, train_data_loader, val_data_loader, max_iters):
     eval_iters = 200
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-    warmup_iters = 2000 # how many steps to warm up for
-    lr_decay_iters = max(1, int(max_iters / 30.0)) # should be ~= max_iters per Chinchilla
+    warmup_iters = max(1, int(max_iters / 30.0)) # how many steps to warm up for
+    lr_decay_iters = max_iters # should be ~= max_iters per Chinchilla
     min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-    wandb_log = False # disabled by default
     decay_lr = True # whether to decay the learning rate
-    eval_interval = 2000
     master_process = True
     eval_only = False 
     gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-    batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
     log_interval = 1
     iter_num = 0
 

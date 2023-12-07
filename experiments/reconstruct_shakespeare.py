@@ -6,7 +6,7 @@ Lightweight Example usage:
 python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
 
 NanoGPT Example usage:
-python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --model_name=NanoGPT --num_epochs=5 --chunk_size=256 --block_size=256 --nembd=384 --nhead=6 --nlayer=6 --max_iters=20 --batch_size=16
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --model_name=NanoGPT --num_epochs=5 --chunk_size=256 --block_size=256 --nembd=384 --nhead=6 --nlayer=6 --max_iters=20 --batch_size=12
 """
 
 # General imports
@@ -107,7 +107,8 @@ if __name__ == "__main__":
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
     elif args.model_name == 'NanoGPT':
-        train_nanogpt(model=model, device=device, train_data_loader = train_loader, val_data_loader = test_loader, max_iters=args.max_iters)
+        train_nanogpt(model=model, device=device, train_data_loader = train_loader, 
+                      val_data_loader = test_loader, max_iters=args.max_iters, batch_size=args.batch_size)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
