@@ -6,7 +6,7 @@ Lightweight Example usage:
 python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
 
 NanoGPT Example usage:
-python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --model_name=NanoGPT --num_epochs=5 --chunk_size=256 --block_size=256 --nembd=384 --nhead=6 --nlayer=6 --max_iters=20
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --model_name=NanoGPT --num_epochs=5 --chunk_size=256 --block_size=256 --nembd=384 --nhead=6 --nlayer=6 --max_iters=20 --batch_size=16
 """
 
 # General imports
