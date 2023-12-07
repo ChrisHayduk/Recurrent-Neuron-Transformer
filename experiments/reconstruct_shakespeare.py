@@ -6,7 +6,7 @@ Lightweight Example usage:
 python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
 
 NanoGPT Example usage:
-python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1 --model_name=NanoGPT
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --block_size=1024 --nembd=768 --nhead=12 --nlayer=12 --model_name=NanoGPT
 """
 
 # General imports
@@ -39,6 +39,10 @@ if __name__ == "__main__":
     parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
     parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
     parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
+    parser.add_argument("--nembd", type=int, default=768, help="Dimension of the embedding layer for NanoGPT")
+    parser.add_argument("--nlayer", type=int, default=12, help="Number of layers for NanoGPT")
+    parser.add_argument("--block_size", type=int, default=1024, help="Block size for NanoGPT")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Drop out")
     args = parser.parse_args()
 
     # Define the device
@@ -77,14 +81,8 @@ if __name__ == "__main__":
         raise NotImplementedError
     
     elif args.model_name == 'NanoGPT':
-        block_size = 1024
-        n_layer = 12
-        n_head = 12
-        n_embd = 768
-        dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
-        bias = False # do we use bias inside LayerNorm and Linear layers?
-        model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                          bias=bias, vocab_size=vocab_size, dropout=dropout) # start with model_args from command line
+        model_args = dict(n_layer=args.nlayer, n_head=args.nhead, n_embd=args.nembd, block_size=args.block_size,
+                          bias=False, vocab_size=vocab_size, dropout=args.dropout) # start with model_args from command line
         gptconf = GPTConfig(**model_args)
         model = NanoGPT(gptconf).to(device)
     
@@ -108,7 +106,7 @@ if __name__ == "__main__":
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
     elif args.model_name == 'NanoGPT':
-        train_nanogpt(model, 'cuda', train_loader, test_loader)
+        train_nanogpt(model=model, device=device, train_data_loader = train_loader, val_data_loader = test_loader)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 

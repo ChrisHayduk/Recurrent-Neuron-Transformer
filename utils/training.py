@@ -4,6 +4,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from contextlib import nullcontext
 import time
+import math
 
 # Torch imports
 import torch
@@ -135,8 +136,8 @@ def train_shakespeare_transformer(model, train_loader, eval_loader, optimizer, n
     plt.show()
 
 
-def train_nanogpt(model, device_type, train_data_loader, val_data_loader):
-    device_type = 'cuda' if 'cuda' in device_type else 'cpu'
+def train_nanogpt(model, device, train_data_loader, val_data_loader):
+    device_type = 'cuda' if 'cuda' in str(device) else 'cpu'
     weight_decay=1e-1
     dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
     learning_rate = 6e-4 # max learning rate
