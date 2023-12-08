@@ -96,7 +96,7 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
         # Validation Phase
         model.eval()
         epoch_val_loss = 0
-        eval_progress_bar = tqdm(train_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
+        eval_progress_bar = tqdm(eval_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
         with torch.no_grad():
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
@@ -226,7 +226,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         # Validation Phase
         model.eval()
         epoch_val_loss = 0
-        eval_progress_bar = tqdm(train_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
+        eval_progress_bar = tqdm(eval_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
         with torch.no_grad():
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
@@ -313,11 +313,11 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
         epoch_train_loss = 0
         train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
 
-        # Initialize empty memory of zeros
-        mems = None
-
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
             batch_loss = 0
+
+            # Initialize empty memory of zeros
+            mems = None
 
             # Slide the context window along the long sequence
             for i in range(0, input_chunk.size(1) - context_window, step_size):
@@ -354,12 +354,12 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
         epoch_val_loss = 0
         val_progress_bar = tqdm(eval_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
 
-        # Reset mems before validation
-        mems = None
-
         with torch.no_grad():
             for batch_idx, (input_chunk, target_chunk) in enumerate(val_progress_bar):
                 batch_loss = 0
+
+                # Initialize empty memory of zeros
+                mems = None
 
                 # Slide the context window along the long sequence
                 for i in range(0, input_chunk.size(1) - context_window, step_size):
