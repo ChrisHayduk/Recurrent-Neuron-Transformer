@@ -26,7 +26,7 @@ class MLP(nn.Module):
         else:
             self.c_fc = nn.Linear(config.hidden_dim, 4 * config.hidden_dim)
 
-        self.gelu    = nn.GELU()
+        self.gelu = nn.GELU()
 
         if "proj" == config.recurrent_layers or "all" == config.recurrent_layers:
             self.c_proj = RecurrentNeuronLayer(4 * config.hidden_dim, config.hidden_dim, config.device)
@@ -121,7 +121,7 @@ class RecurrentCausalSelfAttention(nn.Module):
         y = self.resid_dropout(y)
         return y, hidden_layers
     
-class RecurrrentTransformerBlock(nn.Module):
+class RecurrentTransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
@@ -166,7 +166,7 @@ class RecurrentNeuronTransformer(nn.Module):
             wte = nn.Embedding(self.vocab_size, self.word_embedding_dim),
             wpe = nn.Embedding(self.max_length, self.word_embedding_dim),
             drop = nn.Dropout(self.dropout),
-            h = nn.ModuleList([RecurrrentTransformerBlock(config) for _ in range(config.n_layer)]),
+            h = nn.ModuleList([RecurrentTransformerBlock(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(self.hidden_dim),
         ))
 
