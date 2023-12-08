@@ -9,6 +9,7 @@ class Neurons(nn.Module):
         # Initialize matrix neuron parameters and number of neurons to create
         self.n_neurons = n_neurons
         self.params = nn.Parameter(torch.rand(n_neurons, 3, 3) * 2 - 1)   
+        self.gelu = nn.GELU()
     
     def forward(self, inputs, hidden_state=None):
         if hidden_state is not None:
@@ -31,7 +32,7 @@ class Neurons(nn.Module):
         stacked = stacked.view(batch_size, seq_len, self.n_neurons, 3)
 
         # Perform matrix multiplication
-        dot = torch.relu(torch.matmul(self.params, stacked.unsqueeze(4)).squeeze(4))
+        dot = self.gelu(torch.matmul(self.params, stacked.unsqueeze(4)).squeeze(4))
 
         # Update hidden state without in-place operation
         new_hidden = dot[:, :, :, 1].unsqueeze(3).detach()

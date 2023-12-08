@@ -16,19 +16,38 @@ class ModelConfig:
     hidden_dim: int = 768
     dropout: float = 0.0
     device: str = "cuda"
+    recurrent_layers: str = "all"
 
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.c_fc    = RecurrentNeuronLayer(config.hidden_dim, 4 * config.hidden_dim, config.device)
-        self.gelu    = nn.GELU()
-        self.c_proj  = RecurrentNeuronLayer(4 * config.hidden_dim, config.hidden_dim, config.device)
+        if "proj" == config.recurrent_layers or "all" == config.recurrent_layers:
+            self.c_fc = RecurrentNeuronLayer(config.hidden_dim, 4 * config.hidden_dim, config.device)
+        else:
+            self.c_fc = nn.Linear(config.hidden_dim, 4 * config.hidden_dim)
+
+        self.gelu = nn.GELU()
+
+        if "proj" == config.recurrent_layers or "all" == config.recurrent_layers:
+            self.c_proj = RecurrentNeuronLayer(4 * config.hidden_dim, config.hidden_dim, config.device)
+        else:
+            self.c_proj = nn.Linear(4 * config.hidden_dim, config.hidden_dim)
+
         self.dropout = nn.Dropout(config.dropout)
 
-    def forward(self, x, hidden_layers, layer_num=0):
-        x, hidden_layers[f"c_fc_{layer_num}"] = self.c_fc(x, hidden_layers.get(f"c_fc_{layer_num}"))
+    def forward(self, x, hidden_layers = None, layer_num=0):
+        if isinstance(self.c_fc, RecurrentNeuronLayer):
+            x, hidden_layers[f"c_fc_{layer_num}"] = self.c_fc(x, hidden_layers.get(f"c_fc_{layer_num}"))
+        else:
+            x =  self.c_fc(x)
+        
         x = self.gelu(x)
-        x, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(x, hidden_layers.get(f"c_proj_{layer_num}"))
+
+        if isinstance(self.c_proj, RecurrentNeuronLayer):
+            x, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(x, hidden_layers.get(f"c_proj_{layer_num}"))
+        else:
+            x =  self.c_proj(x)
+        
         x = self.dropout(x)
         return x, hidden_layers
     
@@ -38,9 +57,17 @@ class RecurrentCausalSelfAttention(nn.Module):
         super().__init__()
         assert config.hidden_dim % config.num_heads == 0
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = RecurrentNeuronLayer(config.hidden_dim, 3 * config.hidden_dim, config.device)
+        if "qkv" == config.recurrent_layers or "all" == config.recurrent_layers:
+            self.c_attn = RecurrentNeuronLayer(config.hidden_dim, 3 * config.hidden_dim, config.device) 
+        else:
+            self.c_attn = nn.Linear(config.hidden_dim, 3 * config.hidden_dim)
         # output projection
-        self.c_proj = RecurrentNeuronLayer(config.hidden_dim, config.hidden_dim, config.device)
+
+        if "qkv" == config.recurrent_layers or "all" == config.recurrent_layers:
+            self.c_proj = RecurrentNeuronLayer(config.hidden_dim, config.hidden_dim, config.device)
+        else:
+            self.c_proj = nn.Linear(config.hidden_dim, config.hidden_dim)
+
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
@@ -58,11 +85,15 @@ class RecurrentCausalSelfAttention(nn.Module):
             self.register_buffer("bias", torch.tril(torch.ones(self.max_length, self.max_length))
                                         .view(1, 1, self.max_length, self.max_length))
 
-    def forward(self, x, hidden_layers, layer_num=0):
+    def forward(self, x, hidden_layers=None, layer_num=0):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        proj_output, hidden_layers[f"c_attn_{layer_num}"]  = self.c_attn(x, hidden_layers.get(f"c_attn_{layer_num}"))
+        if isinstance(self.c_attn, RecurrentNeuronLayer):
+            proj_output, hidden_layers[f"c_attn_{layer_num}"]  = self.c_attn(x, hidden_layers.get(f"c_attn_{layer_num}"))
+        else:
+            proj_output = self.c_attn(x)
+
         q, k, v = proj_output.split(self.n_embd, dim=2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -82,11 +113,15 @@ class RecurrentCausalSelfAttention(nn.Module):
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
 
         # output projection
-        y, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(y, hidden_layers.get(f"c_proj_{layer_num}"))
+        if isinstance(self.c_proj, RecurrentNeuronLayer):
+            y, hidden_layers[f"c_proj_{layer_num}"] = self.c_proj(y, hidden_layers.get(f"c_proj_{layer_num}"))
+        else:
+            y = self.c_proj(y)
+
         y = self.resid_dropout(y)
         return y, hidden_layers
     
-class RecurrrentTransformerBlock(nn.Module):
+class RecurrentTransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
@@ -95,7 +130,7 @@ class RecurrrentTransformerBlock(nn.Module):
         self.ln_2 = nn.LayerNorm(config.hidden_dim)
         self.mlp = MLP(config)
 
-    def forward(self, x, hidden_layers, layer_num = 0):
+    def forward(self, x, hidden_layers = None, layer_num = 0):
         new_x, hidden_layers = self.attn(self.ln_1(x), hidden_layers, layer_num)
         x = x + new_x
         new_x, hidden_layers = self.mlp(self.ln_2(x), hidden_layers, layer_num)
@@ -117,6 +152,7 @@ class RecurrentNeuronTransformer(nn.Module):
         """
         super(RecurrentNeuronTransformer, self).__init__()
         assert config.hidden_dim % config.num_heads == 0
+        assert config.recurrent_layers in set(["qkv", "proj", "all", "none"])
         
         self.num_heads = config.num_heads
         self.word_embedding_dim = config.hidden_dim
@@ -130,7 +166,7 @@ class RecurrentNeuronTransformer(nn.Module):
             wte = nn.Embedding(self.vocab_size, self.word_embedding_dim),
             wpe = nn.Embedding(self.max_length, self.word_embedding_dim),
             drop = nn.Dropout(self.dropout),
-            h = nn.ModuleList([RecurrrentTransformerBlock(config) for _ in range(config.n_layer)]),
+            h = nn.ModuleList([RecurrentTransformerBlock(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(self.hidden_dim),
         ))
 
