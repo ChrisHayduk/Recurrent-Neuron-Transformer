@@ -6,6 +6,7 @@ from contextlib import nullcontext
 import time
 import math
 import os
+import functools
 
 # Torch imports
 import torch
@@ -27,9 +28,13 @@ from torch.distributed.fsdp.wrap import (
     wrap,
 )
 
+from utils.datasets import TextDataLoader
+from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
+
+
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12352'
 
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -52,22 +57,37 @@ def create_look_ahead_mask(size):
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
 
 def fsdp_main(rank, world_size, args):
-    if args.model_name == "StatefulTransformer":
+    if args["model_name"] == "StatefulTransformer":
+        # Create the tokenizer
+        tokenizer = 'gpt2'
+        vocab_size = 50257  # NOTE: HARD CODED FOR GPT2
+
+        # Create the data loader
+        data_loader = TextDataLoader(file_path=args["data_path"], seq_length=args["chunk_size"], bpe_tokenizer=tokenizer, 
+                                    batch_size=args["batch_size"], vocab_size=vocab_size, split_ratio=args["split_ratio"], 
+                                    device=args["device"])
+        train_loader, test_loader = data_loader.create_loaders()
         config_args = dict()
 
-        sampler1 = DistributedSampler(args.train_loader, rank=rank, num_replicas=world_size, shuffle=True)
-        sampler2 = DistributedSampler(args.test_loader, rank=rank, num_replicas=world_size, shiffle=False)
+        sampler1 = DistributedSampler(train_loader, rank=rank, num_replicas=world_size, shuffle=True)
+        sampler2 = DistributedSampler(test_loader, rank=rank, num_replicas=world_size, shuffle=False)
 
         for k, v in args.items():
             if k not in set(["model", "train_loader", "eval_loader", "optimizer", "devices", "save_model_name", "save_loss_curves_name", "save_losses_csv_name"]):
                 config_args[k] = v
 
-        train_recurrent_shakespeare_transformer(model=args.model, train_loader=args.train_loader, eval_loader=args.test_loader,
-                                                context_window=args.max_seq_length, step_size=args.window_step_size,
-                                                optimizer=args.optimizer, num_epochs=args.num_epochs, args=vars(config_args), device=args.device, 
-                                                mask=False, save_model_name=args.save_model_name, 
-                                                save_loss_curves_name=args.save_loss_curves_name, 
-                                                save_losses_csv_name=args.save_losses_csv_name, distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
+        model_config = ModelConfig(max_length=args["max_seq_length"], vocab_size=vocab_size, 
+                                   n_layer=args["num_layers"], num_heads=args["nhead"], hidden_dim=args["dmodel"],
+                                   dropout=args["dropout"], device=args["device"], recurrent_layers=args["recurrent_layers"])
+        
+        model = RecurrentNeuronTransformer(config=model_config)
+
+        train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                                context_window=args["max_seq_length"], step_size=args["window_step_size"],
+                                                optimizer=None, num_epochs=args["num_epochs"], args=config_args, device=args["device"], 
+                                                mask=False, save_model_name=args["save_model_name"], 
+                                                save_loss_curves_name=args["save_loss_curves_name"], 
+                                                save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
         
     elif args.model_name == 'NanoGPT':
         raise NotImplementedError
@@ -159,7 +179,7 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
                 batch_loss += loss.item()
 
             epoch_train_loss += batch_loss
-            train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+            train_progress_bar.set_postfix(loss=batch_loss)
 
         avg_train_loss = epoch_train_loss / len(train_loader)
         train_losses.append(avg_train_loss)
@@ -195,7 +215,7 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
                     batch_loss += loss.item()
 
                 epoch_val_loss += batch_loss
-                eval_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+                eval_progress_bar.set_postfix(loss=batch_loss)
 
         avg_val_loss = epoch_val_loss / len(eval_loader)
         val_losses.append(avg_val_loss)
@@ -260,8 +280,12 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         setup(rank, world_size)
         device = rank
         torch.cuda.set_device(device)
+        my_auto_wrap_policy = functools.partial(
+            size_based_auto_wrap_policy, min_num_params=100
+        )
         model.to(device)
-        model = FSDP(model)
+        model = FSDP(model, auto_wrap_policy=my_auto_wrap_policy)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
     else:
         model.to(device)
     
@@ -281,20 +305,21 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         wandb.define_metric("*", step_metric="epoch")
 
     
-    best_val_loss = float('inf')
-    train_losses = []
-    val_losses = []
-    loss_records = []
+        best_val_loss = float('inf')
+        train_losses = []
+        val_losses = []
+        loss_records = []
 
     for epoch in range(num_epochs):
         model.train()
-        epoch_train_loss = 0
+        epoch_train_loss = 0 if not distributed else torch.zeros(1).to(device)
         train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
 
         if sampler:
             sampler.set_epoch(epoch)
 
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
+            print(f"Batch {batch_idx}, rank/device {device}")
             batch_loss = 0
             hidden_layers = dict()
 
@@ -319,11 +344,12 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                 batch_loss += loss.item()
 
             epoch_train_loss += batch_loss
-            train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+            train_progress_bar.set_postfix(loss=batch_loss)
 
         if distributed:
             dist.all_reduce(epoch_train_loss, op=dist.ReduceOp.SUM)
         if distributed and rank == 0:
+            epoch_train_loss = epoch_train_loss.item()
             print('Train Epoch: {} \tLoss: {:.6f}'.format(epoch, epoch_train_loss / (len(train_progress_bar) * world_size)))
             avg_train_loss = epoch_train_loss / (len(train_progress_bar) * world_size)
             train_losses.append(avg_train_loss)
@@ -333,7 +359,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
 
         # Validation Phase
         model.eval()
-        epoch_val_loss = 0
+        epoch_val_loss = 0 if not distributed else torch.zeros(1).to(device)
         eval_progress_bar = tqdm(eval_loader, desc=f'Evaluating: Epoch {epoch+1}/{num_epochs}', leave=False)
         with torch.no_grad():
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
@@ -356,14 +382,15 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                     batch_loss += loss.item()
 
                 epoch_val_loss += batch_loss
-                eval_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+                eval_progress_bar.set_postfix(loss=batch_loss)
 
         if distributed:
             dist.all_reduce(epoch_val_loss, op=dist.ReduceOp.SUM)
         if distributed and rank == 0:
+            epoch_val_loss = epoch_val_loss.item()
             print('Eval Epoch: {} \tLoss: {:.6f}'.format(epoch, epoch_val_loss / (len(eval_progress_bar) * world_size)))
             avg_val_loss = epoch_val_loss / (len(eval_loader) * world_size)
-            val_losses.append(avg_train_loss)
+            val_losses.append(avg_val_loss)
         elif not distributed:
             avg_val_loss = epoch_val_loss / len(eval_loader)
             val_losses.append(avg_val_loss)
@@ -378,13 +405,13 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                 best_val_loss = avg_val_loss
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
-                else:
-                    dist.barrier()
-                    states = model.state_dict()
-                    if rank == 0:
-                        torch.save(states, f"experiment_results/{save_model_name}")
+        if distributed:
+            dist.barrier()
+            states = model.state_dict()
+            if rank == 0:
+                torch.save(states, f"experiment_results/{save_model_name}")
 
-            print(f"Epoch {epoch+1}/{num_epochs} completed. Train Loss: {avg_train_loss}, Val Loss: {avg_val_loss}")
+                print(f"Epoch {epoch+1}/{num_epochs} completed. Train Loss: {avg_train_loss}, Val Loss: {avg_val_loss}")
 
     if rank == 0 or not distributed:
         # Save the loss records to a CSV
@@ -550,7 +577,7 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
                 batch_loss += loss.item()
 
             epoch_train_loss += batch_loss
-            train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
+            train_progress_bar.set_postfix(loss=batch_loss)
 
         avg_train_loss = epoch_train_loss / len(train_loader)
         train_losses.append(avg_train_loss)
@@ -587,7 +614,7 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
                     batch_loss += loss.item()
     
                 epoch_val_loss += batch_loss
-                val_progress_bar.set_postfix(loss=epoch_val_loss / (batch_idx + 1))
+                val_progress_bar.set_postfix(loss=batch_loss)
     
             avg_val_loss = epoch_val_loss / len(eval_loader)
             val_losses.append(avg_val_loss)

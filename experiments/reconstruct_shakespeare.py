@@ -24,7 +24,7 @@ from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, Mode
 from models.nanogpt_model import NanoGPT, GPTConfig
 from models.transformer_xl import TransformerXL
 from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, \
-                           train_shakespeare_transformer_xl, train_nanogpt
+                           train_shakespeare_transformer_xl, train_nanogpt, fsdp_main
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -128,16 +128,15 @@ if __name__ == "__main__":
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
         else:
+            print("Starting distributed run for StatefulTransformer")
             WORLD_SIZE = torch.cuda.device_count()
-            args["model"] = model
-            args["train_loader"] = train_loader
-            args["eval_loader"] = test_loader
-            args["save_loss_curves_name"] = save_model_name
-            args["save_loss_curves"] = save_loss_curves_name
+
+            args = vars(args)
+            args["save_model_name"] = save_model_name
+            args["save_loss_curves_name"] = save_loss_curves_name
             args["save_losses_csv_name"] = save_losses_csv_name
-            args["optimizer"] = optimizer
             args["device"] = device
-            mp.spawn(train_recurrent_shakespeare_transformer,
+            mp.spawn(fsdp_main,
                 args=(WORLD_SIZE, args),
                 nprocs=WORLD_SIZE,
                 join=True)
