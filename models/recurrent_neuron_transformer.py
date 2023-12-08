@@ -153,6 +153,8 @@ class RecurrentNeuronTransformer(nn.Module):
         super(RecurrentNeuronTransformer, self).__init__()
         assert config.hidden_dim % config.num_heads == 0
         assert config.recurrent_layers in set(["qkv", "proj", "all", "none"])
+
+        print(config)
         
         self.num_heads = config.num_heads
         self.word_embedding_dim = config.hidden_dim

@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # Create the tokenizer
     tokenizer = 'gpt2'
-    vocab_size = 50257  # NOTE: HARD CODED FOR GPT2
+    vocab_size = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
 
     # Create the data loader
     data_loader = TextDataLoader(file_path=args.data_path, seq_length=args.chunk_size, bpe_tokenizer=tokenizer, 
@@ -107,9 +107,6 @@ if __name__ == "__main__":
         model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
                               d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_layers, 
                               dropout=args.dropout)
-    
-    # Create the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Define the name of the best model and the loss curves
     save_model_name = f"{args.model_name}_best_model.pth"
@@ -120,6 +117,8 @@ if __name__ == "__main__":
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     
     if not args.distributed:
+        # Create the optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         train_shakespeare(model=model, train_loader=train_loader, eval_loader=test_loader,
                                             context_window=args.max_seq_length, step_size=args.window_step_size,
                                             optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
