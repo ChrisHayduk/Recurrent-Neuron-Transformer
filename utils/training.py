@@ -30,6 +30,9 @@ from torch.distributed.fsdp.wrap import (
 
 from utils.datasets import TextDataLoader
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
+from models.nanogpt_model import NanoGPT, GPTConfig
+from models.transformer_xl import TransformerXL
+from models.vanilla_transformer_model import VanillaTransformerModel
 
 
 def setup(rank, world_size):
@@ -57,25 +60,25 @@ def create_look_ahead_mask(size):
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
 
 def fsdp_main(rank, world_size, args):
-    if args["model_name"] == "StatefulTransformer":
-        # Create the tokenizer
-        tokenizer = 'gpt2'
-        vocab_size = 50257  # NOTE: HARD CODED FOR GPT2
+    # Create the tokenizer
+    tokenizer = 'gpt2'
+    vocab_size = 50257  # NOTE: HARD CODED FOR GPT2
 
-        # Create the data loader
-        data_loader = TextDataLoader(file_path=args["data_path"], seq_length=args["chunk_size"], bpe_tokenizer=tokenizer, 
+    # Create the data loader
+    data_loader = TextDataLoader(file_path=args["data_path"], seq_length=args["chunk_size"], bpe_tokenizer=tokenizer, 
                                     batch_size=args["batch_size"], vocab_size=vocab_size, split_ratio=args["split_ratio"], 
                                     device=args["device"])
-        train_loader, test_loader = data_loader.create_loaders()
-        config_args = dict()
+    train_loader, test_loader = data_loader.create_loaders()
+    config_args = dict()
 
-        sampler1 = DistributedSampler(train_loader, rank=rank, num_replicas=world_size, shuffle=True)
-        sampler2 = DistributedSampler(test_loader, rank=rank, num_replicas=world_size, shuffle=False)
+    sampler1 = DistributedSampler(train_loader, rank=rank, num_replicas=world_size, shuffle=True)
+    sampler2 = DistributedSampler(test_loader, rank=rank, num_replicas=world_size, shuffle=False)
 
-        for k, v in args.items():
-            if k not in set(["model", "train_loader", "eval_loader", "optimizer", "devices", "save_model_name", "save_loss_curves_name", "save_losses_csv_name"]):
-                config_args[k] = v
+    for k, v in args.items():
+        if k not in set(["model", "train_loader", "eval_loader", "optimizer", "devices", "save_model_name", "save_loss_curves_name", "save_losses_csv_name"]):
+            config_args[k] = v
 
+    if args["model_name"] == "StatefulTransformer":
         model_config = ModelConfig(max_length=args["max_seq_length"], vocab_size=vocab_size, 
                                    n_layer=args["num_layers"], num_heads=args["nhead"], hidden_dim=args["dmodel"],
                                    dropout=args["dropout"], device=args["device"], recurrent_layers=args["recurrent_layers"])
@@ -90,7 +93,17 @@ def fsdp_main(rank, world_size, args):
                                                 save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
         
     elif args.model_name == 'NanoGPT':
-        raise NotImplementedError
+        model_args = dict(n_layer=args["num_layers"], n_head=args["nhead"], n_embd=args["nembd"], block_size=args["block_size"],
+                          bias=False, vocab_size=vocab_size, dropout=args["dropout"]) # start with model_args from command line
+        gptconf = GPTConfig(**model_args)
+        model = NanoGPT(gptconf)
+
+        train_nanogpt(model=model, train_loader=train_loader, eval_loader=test_loader,
+                        context_window=args["max_seq_length"], step_size=args["window_step_size"],
+                        optimizer=None, num_epochs=args["num_epochs"], args=config_args, device=args["device"], 
+                        mask=False, save_model_name=args["save_model_name"], 
+                        save_loss_curves_name=args["save_loss_curves_name"], 
+                        save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
 
     elif args.model_name == "TransformerXL":
         raise NotImplementedError
