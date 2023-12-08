@@ -55,6 +55,9 @@ def fsdp_main(rank, world_size, args):
     if args.model_name == "StatefulTransformer":
         config_args = dict()
 
+        sampler1 = DistributedSampler(args.train_loader, rank=rank, num_replicas=world_size, shuffle=True)
+        sampler2 = DistributedSampler(args.test_loader, rank=rank, num_replicas=world_size, shiffle=False)
+
         for k, v in args.items():
             if k not in set(["model", "train_loader", "eval_loader", "optimizer", "devices", "save_model_name", "save_loss_curves_name", "save_losses_csv_name"]):
                 config_args[k] = v
@@ -64,7 +67,7 @@ def fsdp_main(rank, world_size, args):
                                                 optimizer=args.optimizer, num_epochs=args.num_epochs, args=vars(config_args), device=args.device, 
                                                 mask=False, save_model_name=args.save_model_name, 
                                                 save_loss_curves_name=args.save_loss_curves_name, 
-                                                save_losses_csv_name=args.save_losses_csv_name, distributed=True, rank=rank, world_size=world_size)
+                                                save_losses_csv_name=args.save_losses_csv_name, distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
         
     elif args.model_name == 'NanoGPT':
         raise NotImplementedError
@@ -287,6 +290,9 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
         model.train()
         epoch_train_loss = 0
         train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
+
+        if sampler:
+            sampler.set_epoch(epoch)
 
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
             batch_loss = 0

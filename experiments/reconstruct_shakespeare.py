@@ -54,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument("--recurrent_layers", type=str, default="all", help="Which layers to make recurrent in Recurrent Neuron Transformer. Possible values: all, qkv, proj, none")
     parser.add_argument("--distributed", type=bool, default=False, help="Whether to run training in distributed mode or on a single GPU")
     args = parser.parse_args()
-    
+
     print(os.getcwd())
     if not os.path.isdir('experiment_results'):
         os.mkdir('experiment_results')
