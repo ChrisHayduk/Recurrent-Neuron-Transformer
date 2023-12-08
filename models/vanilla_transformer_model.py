@@ -31,6 +31,10 @@ class VanillaTransformerModel(nn.Module):
         return num_params
 
     def forward(self, tgt, tgt_mask=None):
+        # Generate causal mask
+        tgt_seq_len = tgt.size(0)
+        tgt_mask = generate_square_subsequent_mask(tgt_seq_len).to(tgt.device)
+        
         tgt = self.embedding(tgt) * math.sqrt(self.d_model)
         tgt = self.pos_encoder(tgt)
 
@@ -56,3 +60,6 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return x
+
+def generate_square_subsequent_mask(sz):
+    return torch.triu(torch.full((sz, sz), float('-inf')), diagonal=1)
