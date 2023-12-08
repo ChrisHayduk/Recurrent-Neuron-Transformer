@@ -1,6 +1,6 @@
 # Recurrent Neuron Transformer
 
-To begin training, execute the following commands:
+To begin training, execute the following commands in your terminal:
 1. `git clone https://github.com/ChrisHayduk/Recurrent-Neuron-Transformer.git`
 2. `cd Recurrent-Neuron-Transformer`
 3. `pip install -r requirements.txt`
