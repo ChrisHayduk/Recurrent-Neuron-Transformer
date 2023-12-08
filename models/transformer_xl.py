@@ -17,12 +17,18 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0), :]
         return x
 
+def generate_causal_mask(seq_len):
+    mask = torch.triu(torch.ones(seq_len, seq_len) * float('-inf'), diagonal=1)
+    return mask
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, nhead, dropout=0.1):
         super(MultiHeadAttention, self).__init__()
         self.d_model = d_model
         self.nhead = nhead
         self.head_dim = d_model // nhead
+        assert self.head_dim * nhead == d_model, "d_model must be divisible by nhead"
+
         self.wq = nn.Linear(d_model, d_model)
         self.wk = nn.Linear(d_model, d_model)
         self.wv = nn.Linear(d_model, d_model)
@@ -32,20 +38,24 @@ class MultiHeadAttention(nn.Module):
     def forward(self, query, key, value, tgt_mask=None):
         batch_size, seq_len, _ = query.size()
 
-        # Linear projections
-        Q = self.wq(query)
-        K = self.wk(key)
-        V = self.wv(value)
+        # Generate causal mask
+        causal_mask = generate_causal_mask(seq_len).to(query.device)
 
-        # Split heads and rearrange to [batch_size, nhead, seq_len, head_dim]
-        Q = Q.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
-        K = K.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
-        V = V.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        # Linear projections
+        Q = self.wq(query).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        K = self.wk(key).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        V = self.wv(value).view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
 
         # Scaled dot-product attention
         attn_weights = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
+
+        # Apply causal mask
+        attn_weights += causal_mask.unsqueeze(0).unsqueeze(0)  # Adjust for batch size and number of heads
+
+        # Apply optional target mask (if provided)
         if tgt_mask is not None:
             attn_weights = attn_weights.masked_fill(tgt_mask == 0, -float('inf'))
+
         attn = torch.softmax(attn_weights, dim=-1)
         attn = self.dropout(attn)
         output = torch.matmul(attn, V)
