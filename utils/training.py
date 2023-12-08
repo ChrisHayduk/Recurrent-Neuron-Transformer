@@ -166,7 +166,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             sampler.set_epoch(epoch)
 
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
-            print(f"Batch {batch_idx}, rank/device {device}")
+            # print(f"Batch {batch_idx}, rank/device {device}") # Uncomment for debugging multiple GPUs
             batch_loss = 0
             hidden_layers = dict()
             mems = None
