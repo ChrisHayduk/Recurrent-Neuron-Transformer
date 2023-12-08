@@ -15,7 +15,10 @@ from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformerModel
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
-from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
+from models.transformer_xl import TransformerXL
+
+from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, \
+                           train_shakespeare_transformer_xl
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -84,7 +87,9 @@ if __name__ == "__main__":
         raise NotImplementedError
     
     elif args.model_name == 'TransformerXL':
-        raise NotImplementedError
+        model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
+                              d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_decoder_layers, 
+                              dropout=args.drouput).to(device)
     
     # Create the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -103,6 +108,12 @@ if __name__ == "__main__":
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
+    elif args.model_name == 'TransformerXL':
+        train_shakespeare_transformer_xl(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                         context_window=args.max_seq_length, step_size=args.window_step_size,
+                                         optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                         save_model_name=save_model_name, save_loss_curves_name=save_loss_curves_name, 
+                                         save_losses_csv_name=save_losses_csv_name)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       context_window=args.max_seq_length, step_size=args.window_step_size,

@@ -280,7 +280,7 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
 
 
 def train_shakespeare_transformer_xl(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs,
-                                     device, mask=False, save_model_name='best_model.pth',
+                                     device, save_model_name='best_model.pth',
                                      save_loss_curves_name='loss_curves.png', save_losses_csv_name='losses.csv'):
     """
     Trains and validates a Transformer XL model on long sequences.
@@ -308,13 +308,13 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
     val_losses = []
     loss_records = []
 
-    # Initialize mems with zeros
-    mems = None
-
     for epoch in range(num_epochs):
         model.train()
         epoch_train_loss = 0
         train_progress_bar = tqdm(train_loader, desc=f'Training: Epoch {epoch+1}/{num_epochs}', leave=False)
+
+        # Initialize empty memory of zeros
+        mems = None
 
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
             batch_loss = 0
@@ -326,18 +326,11 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
                 input_seq = input_chunk[:, i:i + context_window].to(device)
                 target_seq = target_chunk[:, i + 1:i + context_window + 1].to(device)
 
-                # Optionally mask the target sequence
-                if mask:
-                    target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
-                    target_seq_mask = target_seq_mask.unsqueeze(0)
-                else:
-                    target_seq_mask = None
-
                 # Zero the gradients
                 optimizer.zero_grad()
 
                 # Forward pass
-                outputs, mems = model(input_seq, mems, tgt_mask=target_seq_mask)  # Update mems
+                outputs, mems = model(input_seq, mems)  # Update mems
 
                 # Reshape outputs and target for CrossEntropyLoss
                 outputs = outputs.reshape(-1, outputs.size(-1))
@@ -375,15 +368,8 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
                     input_seq = input_chunk[:, i:i + context_window].to(device)
                     target_seq = target_chunk[:, i + 1:i + context_window + 1].to(device)
     
-                    # Optionally mask the target sequence
-                    if mask:
-                        target_seq_mask = create_look_ahead_mask(target_seq.size(1)).to(device)
-                        target_seq_mask = target_seq_mask.unsqueeze(0)
-                    else:
-                        target_seq_mask = None
-    
                     # Forward pass
-                    outputs, mems = model(input_seq, mems, tgt_mask=target_seq_mask)  # Update mems
+                    outputs, mems = model(input_seq, mems)  # Update mems
     
                     # Reshape outputs and target for CrossEntropyLoss
                     outputs = outputs.reshape(-1, outputs.size(-1))
@@ -397,7 +383,7 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
                 epoch_val_loss += batch_loss
                 val_progress_bar.set_postfix(loss=epoch_val_loss / (batch_idx + 1))
     
-            avg_val_loss = epoch_val_loss / len(test_loader)
+            avg_val_loss = epoch_val_loss / len(eval_loader)
             val_losses.append(avg_val_loss)
 
             # Create dictionary of loss records, append to list of results
@@ -410,17 +396,17 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
     
             print(f"Epoch {epoch+1}/{num_epochs} completed. Train Loss: {avg_train_loss}, Val Loss: {avg_val_loss}")
     
-        # Save the loss records to a CSV
-        df = pd.DataFrame(loss_records)
-        df.to_csv(f"experiment_results/{save_losses_csv_name}", index=False)
-    
-        # Plot the training and validation loss curves
-        plt.figure(figsize=(10, 6))
-        plt.plot(train_losses, label='Training Loss')
-        plt.plot(val_losses, label='Validation Loss')
-        plt.title('Training and Validation Losses')
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.savefig(f"experiment_results/{save_loss_curves_name}")
-        plt.show()
+    # Save the loss records to a CSV
+    df = pd.DataFrame(loss_records)
+    df.to_csv(f"experiment_results/{save_losses_csv_name}", index=False)
+
+    # Plot the training and validation loss curves
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.title('Training and Validation Losses')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig(f"experiment_results/{save_loss_curves_name}")
+    plt.show()

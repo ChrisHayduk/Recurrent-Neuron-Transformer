@@ -1,5 +1,21 @@
+import math
 import torch
 import torch.nn as nn
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return x
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, nhead, dropout=0.1):
@@ -14,32 +30,36 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, key, value, tgt_mask=None):
+        batch_size, seq_len, _ = query.size()
+
         # Linear projections
         Q = self.wq(query)
         K = self.wk(key)
         V = self.wv(value)
 
-        # Split heads
-        Q = Q.view(-1, self.nhead, self.head_dim)
-        K = K.view(-1, self.nhead, self.head_dim)
-        V = V.view(-1, self.nhead, self.head_dim)
+        # Split heads and rearrange to [batch_size, nhead, seq_len, head_dim]
+        Q = Q.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        K = K.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        V = V.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
 
         # Scaled dot-product attention
-        attn_weights = torch.bmm(Q, K.transpose(1, 2)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
         if tgt_mask is not None:
             attn_weights = attn_weights.masked_fill(tgt_mask == 0, -float('inf'))
         attn = torch.softmax(attn_weights, dim=-1)
         attn = self.dropout(attn)
-        output = torch.bmm(attn, V)
+        output = torch.matmul(attn, V)
 
-        # Concatenate heads and project back
-        output = output.view(-1, self.nhead * self.head_dim)
+        # Concatenate heads and project back to [batch_size, seq_len, d_model]
+        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         output = self.wo(output)
+
         return output
 
 class TransformerEncoderBlock(nn.Module):
-    def __init__(self, d_model, nhead, dropout=0.1):
+    def __init__(self, d_model, nhead, mem_size, dropout=0.1):
         super(TransformerEncoderBlock, self).__init__()
+        self.mem_size = mem_size
         self.self_attn = MultiHeadAttention(d_model, nhead, dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
@@ -50,29 +70,53 @@ class TransformerEncoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, tgt_mask=None):
+    def forward(self, x, mems=None, tgt_mask=None):
+        input_seq_len = x.size(0)  # length of the new input
+
+        if mems is not None:
+            x_with_mems = torch.cat([mems, x], dim=0)
+            x_attended = self.self_attn(x_with_mems, x_with_mems, x_with_mems, tgt_mask)
+        else:
+            x_attended = self.self_attn(x, x, x, tgt_mask)
+
+        # Ensure x_attended is sliced to match the input sequence length
+        x_attended = x_attended[-input_seq_len:]
+
         residual = x
-        x = self.self_attn(x, x, x, tgt_mask)
-        x = self.norm1(x + residual)
+        x = self.norm1(x_attended + residual)
         residual = x
         x = self.ffn(x)
         x = self.norm2(x + residual)
-        return self.dropout(x)
 
-class TransformerXLModel(nn.Module):
-    def __init__(self, vocab_size, d_model, nhead, num_layers, dropout=0.1):
-        super(TransformerXLModel, self).__init__()
+        # Update memory
+        new_mem = x if mems is not None else None
+
+        return self.dropout(x), new_mem
+
+class TransformerXL(nn.Module):
+    def __init__(self, vocab_size, chunk_size, max_seq_length, d_model, nhead, num_layers, dropout=0.1):
+        super(TransformerXL, self).__init__()
+        self.d_model = d_model
+        self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
         self.embedding = nn.Embedding(vocab_size, d_model)
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
-        self.encoder = nn.ModuleList([TransformerEncoderBlock(d_model, nhead, dropout) for _ in range(num_layers)])
+        self.encoder = nn.ModuleList([TransformerEncoderBlock(d_model, nhead, mem_size=chunk_size, dropout=dropout) \
+                                      for _ in range(num_layers)])
         self.linear = nn.Linear(d_model, vocab_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, tgt_mask=None):
-        mems = None
+    def forward(self, x, mems=None, tgt_mask=None):
+        if mems is None:
+            mems = [None] * len(self.encoder)
+
+        new_mems = []
         x = self.embedding(x) * math.sqrt(self.d_model)
         x = self.pos_encoder(x)
-        for layer in self.encoder:
-            x, mems = layer(x, tgt_mask=tgt_mask, mems=mems)
+
+        for i, layer in enumerate(self.encoder):
+            x, mem = layer(x, mems=mems[i], tgt_mask=tgt_mask)
+            new_mems.append(mem)
+
         x = self.dropout(x)
-        return self.linear(x), mems
+        x = self.linear(x)
+
+        return x, new_mems
