@@ -19,7 +19,9 @@ from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformerModel
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
 from models.nanogpt_model import NanoGPT, GPTConfig
-from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, train_nanogpt
+from models.transformer_xl import TransformerXL
+from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, \
+                           train_shakespeare_transformer_xl, train_nanogpt
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -34,7 +36,6 @@ if __name__ == "__main__":
     parser.add_argument("--chunk_size", type=int, default=2048, help="Size of the vocabulary")
     parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
     parser.add_argument("--nhead", type=int, default=8, help="Number of attention heads")
-    parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
     parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
     parser.add_argument("--dmodel", type=int, default=512, help="Dimension of the model")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout probability")
@@ -79,12 +80,12 @@ if __name__ == "__main__":
     # Create the model
     if args.model_name == 'VanillaTransformer':
         model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=args.dmodel, 
-                                        nhead=args.nhead, num_decoder_layers=args.num_decoder_layers, 
+                                        nhead=args.nhead, num_decoder_layers=args.num_layers, 
                                         dim_feedforward=args.dim_feedforward).to(device)
         
     elif args.model_name == 'StatefulTransformer':
         model_config = ModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
-                                   n_layer=args.num_decoder_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
+                                   n_layer=args.num_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
                                    dropout=args.dropout, device=device)
         model = RecurrentNeuronTransformer(config=model_config).to(device)
 
@@ -95,7 +96,9 @@ if __name__ == "__main__":
         model = NanoGPT(gptconf).to(device)
     
     elif args.model_name == 'TransformerXL':
-        raise NotImplementedError
+        model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
+                              d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_layers, 
+                              dropout=args.drouput).to(device)
     
     # Create the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -117,6 +120,14 @@ if __name__ == "__main__":
     elif args.model_name == 'NanoGPT':
         train_nanogpt(model=model, device=device, train_data_loader = train_loader, 
                       val_data_loader = test_loader, max_iters=args.max_iters, batch_size=args.batch_size)
+
+    elif args.model_name == 'TransformerXL':
+        train_shakespeare_transformer_xl(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                         context_window=args.max_seq_length, step_size=args.window_step_size,
+                                         optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                         save_model_name=save_model_name, save_loss_curves_name=save_loss_curves_name, 
+                                         save_losses_csv_name=save_losses_csv_name)
+
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       context_window=args.max_seq_length, step_size=args.window_step_size,
