@@ -19,6 +19,7 @@ from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import TransformerModel
 
+import wandb
 
 
 # TODO: Using a mask breaks the training process due to a shape error. Needs to be fixed
@@ -36,7 +37,7 @@ def create_look_ahead_mask(size):
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
 
 
-def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, device, mask=False):
+def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, device, args, mask=False):
     """
     Trains a transformer model to reproduce large chunks of Shakespeare's plays by sliding a context window along a 
     larger piece of text. The model is trained to predict the next word in the sequence given the context window.
@@ -54,6 +55,16 @@ def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, dev
     Returns:
         None
     """
+    args["architecture"] = "vanilla_transformer"
+    # start a new wandb run to track this script
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="transformer-testing",
+        
+        # track hyperparameters and run metadata
+        config=args
+    )
+
 
     for epoch in range(num_epochs):
         model.train()
@@ -91,7 +102,18 @@ def train_shakespeare_transformer(model, data_loader, optimizer, num_epochs, dev
 
 
 def train_recurrent_shakespeare_transformer(model, context_window, step_size, data_loader, optimizer, num_epochs, 
-                                            device='cuda', mask=False):
+                                            args, device='cuda', mask=False):
+    
+    args["architecture"] = "recurrent_neuron_transformer"
+    # start a new wandb run to track this script
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="transformer-testing",
+        
+        # track hyperparameters and run metadata
+        config=args
+    )
+
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0

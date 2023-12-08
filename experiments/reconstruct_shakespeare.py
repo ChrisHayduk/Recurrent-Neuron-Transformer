@@ -86,7 +86,7 @@ if __name__ == "__main__":
     
     if args.model_name == 'StatefulTransformer':
         train_recurrent_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, 
-                                                num_epochs=args.num_epochs, device=device, mask=False)
+                                                num_epochs=args.num_epochs, device=device, args=vars(args), mask=False)
     else:
-        train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, 
+        train_shakespeare_transformer(model=model, data_loader=train_loader, optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args),
                                     device=device, mask=False)
