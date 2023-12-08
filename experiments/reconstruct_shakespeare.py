@@ -118,8 +118,8 @@ if __name__ == "__main__":
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
     elif args.model_name == 'NanoGPT':
-        train_nanogpt(model=model, device=device, train_data_loader = train_loader, 
-                      val_data_loader = test_loader, max_iters=args.max_iters, batch_size=args.batch_size, args=vars(args))
+        train_nanogpt(model=model, train_data_loader = train_loader, 
+                      val_data_loader = test_loader, num_epochs=args.num_epochs, args=vars(args))
 
     elif args.model_name == 'TransformerXL':
         train_shakespeare_transformer_xl(model=model, train_loader=train_loader, eval_loader=test_loader,
