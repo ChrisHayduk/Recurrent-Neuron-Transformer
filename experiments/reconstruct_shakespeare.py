@@ -4,6 +4,9 @@ and store metrics, and to save the model at regular intervals.
 
 Lightweight Example usage:
 python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --num_epochs=5 --chunk_size=512 --max_seq_length=256 --num_decoder_layers=2 --nhead=1
+
+NanoGPT Example usage:
+python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tinyshakespeare_100_lines.txt' --model_name=NanoGPT --num_epochs=5 --chunk_size=256 --block_size=256 --nembd=384 --nhead=6 --num_layer=6 --max_iters=20 --batch_size=12
 """
 
 # General imports
@@ -15,7 +18,8 @@ from transformers import GPT2Tokenizer
 from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformerModel
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
-from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer
+from models.nanogpt_model import NanoGPT, GPTConfig
+from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, train_nanogpt
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -33,12 +37,16 @@ if __name__ == "__main__":
     parser.add_argument("--num_decoder_layers", type=int, default=6, help="Number of decoder layers")
     parser.add_argument("--dim_feedforward", type=int, default=2048, help="Dimension of the feedforward network")
     parser.add_argument("--dmodel", type=int, default=512, help="Dimension of the model")
-    parser.add_argument("--drouput", type=float, default=0.1, help="Dropout probability")
+    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout probability")
     parser.add_argument("--split_ratio", type=float, default=0.8, help="Ratio of train to test data")
     parser.add_argument("--window_step_size", type=int, default=1, help="Size of the vocabulary")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--nembd", type=int, default=768, help="Dimension of the embedding layer for NanoGPT")
+    parser.add_argument("--num_layers", type=int, default=12, help="Number of layers for NanoGPT")
+    parser.add_argument("--block_size", type=int, default=1024, help="Block size for NanoGPT")
+    parser.add_argument("--max_iters", type=float, default=0.0, help="Max iternations for NanoGPT")
     args = parser.parse_args()
 
     # Define the device
@@ -77,11 +85,14 @@ if __name__ == "__main__":
     elif args.model_name == 'StatefulTransformer':
         model_config = ModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
                                    n_layer=args.num_decoder_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
-                                   dropout=args.drouput, device=device)
+                                   dropout=args.dropout, device=device)
         model = RecurrentNeuronTransformer(config=model_config).to(device)
-    
+
     elif args.model_name == 'NanoGPT':
-        raise NotImplementedError
+        model_args = dict(n_layer=args.num_layers, n_head=args.nhead, n_embd=args.nembd, block_size=args.block_size,
+                          bias=False, vocab_size=vocab_size, dropout=args.dropout) # start with model_args from command line
+        gptconf = GPTConfig(**model_args)
+        model = NanoGPT(gptconf).to(device)
     
     elif args.model_name == 'TransformerXL':
         raise NotImplementedError
@@ -103,6 +114,9 @@ if __name__ == "__main__":
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
+    elif args.model_name == 'NanoGPT':
+        train_nanogpt(model=model, device=device, train_data_loader = train_loader, 
+                      val_data_loader = test_loader, max_iters=args.max_iters, batch_size=args.batch_size)
     else:
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       context_window=args.max_seq_length, step_size=args.window_step_size,

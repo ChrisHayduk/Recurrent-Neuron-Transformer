@@ -2,6 +2,9 @@
 from tqdm import tqdm
 import pandas as pd
 from matplotlib import pyplot as plt
+from contextlib import nullcontext
+import time
+import math
 
 # Torch imports
 import torch
@@ -278,3 +281,122 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
     plt.legend()
     plt.savefig(f"experiment_results/{save_loss_curves_name}")
     plt.show()
+
+
+def train_nanogpt(model, device, train_data_loader, val_data_loader, max_iters, batch_size):
+    device_type = 'cuda' if 'cuda' in str(device) else 'cpu'
+    weight_decay=1e-1
+    dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
+    learning_rate = 6e-4 # max learning rate
+    beta1=0.9
+    beta2=0.95
+    grad_clip=1.0
+    eval_iters = 200
+    ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+    ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    warmup_iters = max(1, int(max_iters / 30.0)) # how many steps to warm up for
+    lr_decay_iters = max_iters # should be ~= max_iters per Chinchilla
+    min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+    decay_lr = True # whether to decay the learning rate
+    master_process = True
+    eval_only = False 
+    gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
+    log_interval = 1
+    iter_num = 0
+
+    scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+    optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+
+    def get_batch(split):
+        loader = train_data_loader if split == 'train' else val_data_loader
+
+        # randomly select a batch of sequences
+        for batch_idx, (input_chunk, target_chunk) in enumerate(loader):
+            x, y = input_chunk.to(device_type), target_chunk.to(device_type)
+            return x, y
+
+    # helps estimate an arbitrarily accurate loss over either split using many batches
+    @torch.no_grad()
+    def estimate_loss():
+        out = {}
+        model.eval()
+        for split in ['train', 'val']:
+            losses = torch.zeros(eval_iters)
+            for k in range(eval_iters):
+                X, Y = get_batch(split)
+                with ctx:
+                    logits, loss = model(X, Y)
+                losses[k] = loss.item()
+            out[split] = losses.mean()
+        model.train()
+        return out
+
+    # learning rate decay scheduler (cosine with warmup)
+    def get_lr(it):
+        # 1) linear warmup for warmup_iters steps
+        if it < warmup_iters:
+            return learning_rate * it / warmup_iters
+        # 2) if it > lr_decay_iters, return min learning rate
+        if it > lr_decay_iters:
+            return min_lr
+        # 3) in between, use cosine decay down to min learning rate
+        decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+        return min_lr + coeff * (learning_rate - min_lr)
+
+
+    # training loop
+    X, Y = get_batch('train') # fetch the very first batch
+    t0 = time.time()
+    local_iter_num = 0 # number of iterations in the lifetime of this process
+    raw_model = model # unwrap DDP container if needed
+    running_mfu = -1.0
+    while True:
+
+        # determine and set the learning rate for this iteration
+        lr = get_lr(iter_num) if decay_lr else learning_rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+
+        if iter_num == 0 and eval_only:
+            break
+
+        # forward backward update, with optional gradient accumulation to simulate larger batch size
+        # and using the GradScaler if data type is float16
+        for micro_step in range(gradient_accumulation_steps):
+            with ctx:
+                logits, loss = model(X, Y)
+                loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+            # immediately async prefetch next batch while model is doing the forward pass on the GPU
+            X, Y = get_batch('train')
+            # backward pass, with gradient scaling if training in fp16
+            scaler.scale(loss).backward()
+        # clip the gradient
+        if grad_clip != 0.0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        # step the optimizer and scaler if training in fp16
+        scaler.step(optimizer)
+        scaler.update()
+        # flush the gradients as soon as we can, no need for this memory anymore
+        optimizer.zero_grad(set_to_none=True)
+
+        # timing and logging
+        t1 = time.time()
+        dt = t1 - t0
+        t0 = t1
+        if iter_num % log_interval == 0 and master_process:
+            # get loss as float. note: this is a CPU-GPU sync point
+            # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+            lossf = loss.item() * gradient_accumulation_steps
+            if local_iter_num >= 5: # let the training loop settle a bit
+                mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
+                running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
+            print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+        iter_num += 1
+        local_iter_num += 1
+
+        # termination conditions
+        if iter_num > max_iters:
+            break
