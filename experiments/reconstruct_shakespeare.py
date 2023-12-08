@@ -23,8 +23,7 @@ from models.vanilla_transformer_model import VanillaTransformerModel
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
 from models.nanogpt_model import NanoGPT, GPTConfig
 from models.transformer_xl import TransformerXL
-from utils.training import train_shakespeare_transformer, train_recurrent_shakespeare_transformer, \
-                           train_shakespeare_transformer_xl, train_nanogpt, fsdp_main
+from utils.training import train_shakespeare, fsdp_main
 
 # Set random seed for reproducibility
 torch.manual_seed(0)
@@ -87,27 +86,27 @@ if __name__ == "__main__":
         f"Invalid model name {args.model_name}"
     
     # Create the model
-    if args.model_name == 'VanillaTransformer':
+    if args.model_name == 'VanillaTransformer' and not args.distributed:
         model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=args.dmodel, 
                                         nhead=args.nhead, num_decoder_layers=args.num_layers, 
                                         dim_feedforward=args.dim_feedforward)
         
-    elif args.model_name == 'StatefulTransformer':
+    elif args.model_name == 'StatefulTransformer' and not args.distributed:
         model_config = ModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
                                    n_layer=args.num_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
                                    dropout=args.dropout, device=device, recurrent_layers=args.recurrent_layers)
         model = RecurrentNeuronTransformer(config=model_config)
 
-    elif args.model_name == 'NanoGPT':
-        model_args = dict(n_layer=args.num_layers, n_head=args.nhead, n_embd=args.nembd, block_size=args.block_size,
+    elif args.model_name == 'NanoGPT' and not args.distributed:
+        model_args = dict(n_layer=args.num_layers, n_head=args.nhead, n_embd=args.nembd, block_size=args.max_seq_length,
                           bias=False, vocab_size=vocab_size, dropout=args.dropout) # start with model_args from command line
         gptconf = GPTConfig(**model_args)
         model = NanoGPT(gptconf)
     
-    elif args.model_name == 'TransformerXL':
+    elif args.model_name == 'TransformerXL' and not args.distributed:
         model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
                               d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_layers, 
-                              dropout=args.drouput)
+                              dropout=args.dropout)
     
     # Create the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -119,42 +118,24 @@ if __name__ == "__main__":
 
     # Train the model
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
-    if args.model_name == 'StatefulTransformer':
-        if not args.distributed:
-            train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
-                                                context_window=args.max_seq_length, step_size=args.window_step_size,
-                                                optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
-                                                mask=False, save_model_name=save_model_name, 
-                                                save_loss_curves_name=save_loss_curves_name, 
-                                                save_losses_csv_name=save_losses_csv_name)
-        else:
-            print("Starting distributed run for StatefulTransformer")
-            WORLD_SIZE = torch.cuda.device_count()
-
-            args = vars(args)
-            args["save_model_name"] = save_model_name
-            args["save_loss_curves_name"] = save_loss_curves_name
-            args["save_losses_csv_name"] = save_losses_csv_name
-            args["device"] = device
-            mp.spawn(fsdp_main,
-                args=(WORLD_SIZE, args),
-                nprocs=WORLD_SIZE,
-                join=True)
-    elif args.model_name == 'NanoGPT':
-        train_nanogpt(model=model, train_data_loader = train_loader, 
-                      val_data_loader = test_loader, num_epochs=args.num_epochs, args=vars(args))
-
-    elif args.model_name == 'TransformerXL':
-        train_shakespeare_transformer_xl(model=model, train_loader=train_loader, eval_loader=test_loader,
-                                         context_window=args.max_seq_length, step_size=args.window_step_size,
-                                         optimizer=optimizer, num_epochs=args.num_epochs, device=device, args=vars(args), 
-                                         save_model_name=save_model_name, save_loss_curves_name=save_loss_curves_name, 
-                                         save_losses_csv_name=save_losses_csv_name)
-
+    
+    if not args.distributed:
+        train_shakespeare(model=model, train_loader=train_loader, eval_loader=test_loader,
+                                            context_window=args.max_seq_length, step_size=args.window_step_size,
+                                            optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
+                                            mask=False, save_model_name=save_model_name, 
+                                            save_loss_curves_name=save_loss_curves_name, 
+                                            save_losses_csv_name=save_losses_csv_name)
     else:
-        train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
-                                      context_window=args.max_seq_length, step_size=args.window_step_size,
-                                      optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
-                                      args=vars(args), mask=False, save_model_name=save_model_name, 
-                                      save_loss_curves_name=save_loss_curves_name, 
-                                      save_losses_csv_name=save_losses_csv_name)
+        print(f"Starting distributed run for {args.model_name}")
+        WORLD_SIZE = torch.cuda.device_count()
+
+        args = vars(args)
+        args["save_model_name"] = save_model_name
+        args["save_loss_curves_name"] = save_loss_curves_name
+        args["save_losses_csv_name"] = save_losses_csv_name
+        args["device"] = device
+        mp.spawn(fsdp_main,
+            args=(WORLD_SIZE, args),
+            nprocs=WORLD_SIZE,
+            join=True)
