@@ -1,0 +1,63 @@
+{
+    "os": "Windows-10-10.0.25300-SP0",
+    "python": "3.11.0",
+    "heartbeatAt": "2023-12-08T22:57:40.859078",
+    "startedAt": "2023-12-08T22:57:40.255836",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--model_name=TransformerXL",
+        "--data_path=data/shakespeare/tinyshakespeare_100_lines.txt",
+        "--num_epochs=2",
+        "--chunk_size=50",
+        "--max_seq_length=25",
+        "--window_step_size=25",
+        "--num_layers=2",
+        "--nhead=2",
+        "--dim_feedforward=1024",
+        "--dmodel=256"
+    ],
+    "state": "running",
+    "program": "-m experiments.reconstruct_shakespeare",
+    "codePathLocal": null,
+    "git": {
+        "remote": "https://github.com/ChrisHayduk/Recurrent-Neuron-Transformer.git",
+        "commit": "9a26c63c850dc5bf81aebec2ea2e37bbbf615150"
+    },
+    "email": "chayduk@fordham.edu",
+    "root": "C:/Users/chris/Desktop/recurrent_neuron_transformers",
+    "host": "DESKTOP-PSFO32V",
+    "username": "chris",
+    "executable": "C:\\Python311\\python.exe",
+    "cpu_count": 8,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 3593.0,
+        "min": 0.0,
+        "max": 3593.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3593.0,
+            "min": 0.0,
+            "max": 3593.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 930.5195274353027,
+            "used": 902.3431930541992
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 3070",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 3070",
+            "memory_total": 8589934592
+        }
+    ],
+    "memory": {
+        "total": 63.92830276489258
+    }
+}
