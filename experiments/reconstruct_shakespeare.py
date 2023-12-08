@@ -12,6 +12,9 @@ python -m experiments.reconstruct_shakespeare --data_path='data/shakespeare/tiny
 # General imports
 import argparse
 import torch
+import os
+
+import torch.multiprocessing as mp
 
 # Imports for the tokenizer, the dataset, and models
 from transformers import GPT2Tokenizer
@@ -48,7 +51,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_layers", type=int, default=12, help="Number of layers for NanoGPT")
     parser.add_argument("--block_size", type=int, default=1024, help="Block size for NanoGPT")
     parser.add_argument("--max_iters", type=float, default=0.0, help="Max iternations for NanoGPT")
+    parser.add_argument("--recurrent_layers", type=str, default="all", help="Which layers to make recurrent in Recurrent Neuron Transformer. Possible values: all, qkv, proj, none")
+    parser.add_argument("--distributed", type=bool, default=False, help="Whether to run training in distributed mode or on a single GPU")
     args = parser.parse_args()
+    
+    print(os.getcwd())
+    if not os.path.isdir('experiment_results'):
+        os.mkdir('experiment_results')
 
     # Define the device
     if torch.cuda.is_available():
@@ -81,24 +90,24 @@ if __name__ == "__main__":
     if args.model_name == 'VanillaTransformer':
         model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args.max_seq_length, d_model=args.dmodel, 
                                         nhead=args.nhead, num_decoder_layers=args.num_layers, 
-                                        dim_feedforward=args.dim_feedforward).to(device)
+                                        dim_feedforward=args.dim_feedforward)
         
     elif args.model_name == 'StatefulTransformer':
         model_config = ModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
                                    n_layer=args.num_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
-                                   dropout=args.dropout, device=device)
-        model = RecurrentNeuronTransformer(config=model_config).to(device)
+                                   dropout=args.dropout, device=device, recurrent_layers=args.recurrent_layers)
+        model = RecurrentNeuronTransformer(config=model_config)
 
     elif args.model_name == 'NanoGPT':
         model_args = dict(n_layer=args.num_layers, n_head=args.nhead, n_embd=args.nembd, block_size=args.block_size,
                           bias=False, vocab_size=vocab_size, dropout=args.dropout) # start with model_args from command line
         gptconf = GPTConfig(**model_args)
-        model = NanoGPT(gptconf).to(device)
+        model = NanoGPT(gptconf)
     
     elif args.model_name == 'TransformerXL':
         model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
                               d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_layers, 
-                              dropout=args.drouput).to(device)
+                              dropout=args.drouput)
     
     # Create the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -111,12 +120,27 @@ if __name__ == "__main__":
     # Train the model
     print(f"Training {args.model_name} on {args.data_path} with chunk size {args.chunk_size}, context window size {args.max_seq_length}, and step size {args.window_step_size}")
     if args.model_name == 'StatefulTransformer':
-        train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
+        if not args.distributed:
+            train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                                 context_window=args.max_seq_length, step_size=args.window_step_size,
                                                 optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
+        else:
+            WORLD_SIZE = torch.cuda.device_count()
+            args["model"] = model
+            args["train_loader"] = train_loader
+            args["eval_loader"] = test_loader
+            args["save_loss_curves_name"] = save_model_name
+            args["save_loss_curves"] = save_loss_curves_name
+            args["save_losses_csv_name"] = save_losses_csv_name
+            args["optimizer"] = optimizer
+            args["device"] = device
+            mp.spawn(train_recurrent_shakespeare_transformer,
+                args=(WORLD_SIZE, args),
+                nprocs=WORLD_SIZE,
+                join=True)
     elif args.model_name == 'NanoGPT':
         train_nanogpt(model=model, train_data_loader = train_loader, 
                       val_data_loader = test_loader, num_epochs=args.num_epochs, args=vars(args))

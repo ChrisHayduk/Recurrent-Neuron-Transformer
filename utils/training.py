@@ -5,13 +5,37 @@ from matplotlib import pyplot as plt
 from contextlib import nullcontext
 import time
 import math
+import os
 
 # Torch imports
 import torch
 import torch.nn as nn
 import wandb
 
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    CPUOffload,
+    BackwardPrefetch,
+)
+from torch.distributed.fsdp.wrap import (
+    size_based_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
 
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
 
 # TODO: Using a mask breaks the training process due to a shape error. Needs to be fixed
 def create_look_ahead_mask(size):
@@ -26,6 +50,32 @@ def create_look_ahead_mask(size):
     """
     mask = torch.triu(torch.ones(size, size), diagonal=1)
     return mask.masked_fill(mask == 1, float('-inf')).masked_fill(mask == 0, float(0.0))
+
+def fsdp_main(rank, world_size, args):
+    if args.model_name == "StatefulTransformer":
+        config_args = dict()
+
+        for k, v in args.items():
+            if k not in set(["model", "train_loader", "eval_loader", "optimizer", "devices", "save_model_name", "save_loss_curves_name", "save_losses_csv_name"]):
+                config_args[k] = v
+
+        train_recurrent_shakespeare_transformer(model=args.model, train_loader=args.train_loader, eval_loader=args.test_loader,
+                                                context_window=args.max_seq_length, step_size=args.window_step_size,
+                                                optimizer=args.optimizer, num_epochs=args.num_epochs, args=vars(config_args), device=args.device, 
+                                                mask=False, save_model_name=args.save_model_name, 
+                                                save_loss_curves_name=args.save_loss_curves_name, 
+                                                save_losses_csv_name=args.save_losses_csv_name, distributed=True, rank=rank, world_size=world_size)
+        
+    elif args.model_name == 'NanoGPT':
+        raise NotImplementedError
+
+    elif args.model_name == "TransformerXL":
+        raise NotImplementedError
+    
+    else:
+        raise NotImplementedError
+        
+    cleanup()
 
 
 def train_shakespeare_transformer(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs, 
@@ -58,7 +108,11 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
         # track hyperparameters and run metadata
         config=args
     )
+    wandb.define_metric("epoch")
+    # set all other metrics to use this step
+    wandb.define_metric("*", step_metric="epoch")
 
+    model.to(device)
 
     best_val_loss = float('inf')
     train_losses = []
@@ -150,7 +204,7 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
             'val_loss': avg_val_loss
         })
 
-        wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
+        wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss}, step=epoch+1)
 
         # Save the best model
         if avg_val_loss < best_val_loss:
@@ -177,7 +231,7 @@ def train_shakespeare_transformer(model, context_window, step_size, train_loader
 
 def train_recurrent_shakespeare_transformer(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs, args, device='cuda', mask=False,
                                             save_model_name='best_model.pth', save_loss_curves_name='loss_curves.png',
-                                            save_losses_csv_name='losses.csv'):
+                                            save_losses_csv_name='losses.csv', distributed = False, rank = -1, world_size = -1, sampler = None):
     """
     Trains and validates a recurrent transformer model. Saves the best model based on validation loss and plots training curves.
 
@@ -198,15 +252,30 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
     Returns:
         None
     """
-    args["architecture"] = "recurrent_neuron_transformer"
-    # start a new wandb run to track this script
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="transformer-testing",
+    if distributed:
+        assert rank >= 0 and world_size > 0
+        setup(rank, world_size)
+        device = rank
+        torch.cuda.set_device(device)
+        model.to(device)
+        model = FSDP(model)
+    else:
+        model.to(device)
+    
+    if not distributed or rank == 0:
+        args["architecture"] = "recurrent_neuron_transformer"
         
-        # track hyperparameters and run metadata
-        config=args
-    )
+        # start a new wandb run to track this script
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="transformer-testing",
+            
+            # track hyperparameters and run metadata
+            config=args
+        )
+        wandb.define_metric("epoch")
+        # set all other metrics to use this step
+        wandb.define_metric("*", step_metric="epoch")
 
     
     best_val_loss = float('inf')
@@ -246,8 +315,15 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
             epoch_train_loss += batch_loss
             train_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
-        avg_train_loss = epoch_train_loss / len(train_loader)
-        train_losses.append(avg_train_loss)
+        if distributed:
+            dist.all_reduce(epoch_train_loss, op=dist.ReduceOp.SUM)
+        if distributed and rank == 0:
+            print('Train Epoch: {} \tLoss: {:.6f}'.format(epoch, epoch_train_loss / (len(train_progress_bar) * world_size)))
+            avg_train_loss = epoch_train_loss / (len(train_progress_bar) * world_size)
+            train_losses.append(avg_train_loss)
+        elif not distributed:
+            avg_train_loss = epoch_train_loss / len(train_loader)
+            train_losses.append(avg_train_loss)
 
         # Validation Phase
         model.eval()
@@ -276,41 +352,60 @@ def train_recurrent_shakespeare_transformer(model, context_window, step_size, tr
                 epoch_val_loss += batch_loss
                 eval_progress_bar.set_postfix(loss=epoch_train_loss / (batch_idx + 1))
 
-        avg_val_loss = epoch_val_loss / len(eval_loader)
-        val_losses.append(avg_val_loss)
+        if distributed:
+            dist.all_reduce(epoch_val_loss, op=dist.ReduceOp.SUM)
+        if distributed and rank == 0:
+            print('Eval Epoch: {} \tLoss: {:.6f}'.format(epoch, epoch_val_loss / (len(eval_progress_bar) * world_size)))
+            avg_val_loss = epoch_val_loss / (len(eval_loader) * world_size)
+            val_losses.append(avg_train_loss)
+        elif not distributed:
+            avg_val_loss = epoch_val_loss / len(eval_loader)
+            val_losses.append(avg_val_loss)
+        
+        if rank == 0 or not distributed:
+            # Create dictionary of loss records, append to list of results
+            loss_records.append({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
+            wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss}, step=epoch+1)
 
-        # Create dictionary of loss records, append to list of results
-        loss_records.append({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
-        wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
+            # Save the best model
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                if not distributed:
+                    torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
+                else:
+                    dist.barrier()
+                    states = model.state_dict()
+                    if rank == 0:
+                        torch.save(states, f"experiment_results/{save_model_name}")
 
-        # Save the best model
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
+            print(f"Epoch {epoch+1}/{num_epochs} completed. Train Loss: {avg_train_loss}, Val Loss: {avg_val_loss}")
 
-        print(f"Epoch {epoch+1}/{num_epochs} completed. Train Loss: {avg_train_loss}, Val Loss: {avg_val_loss}")
+    if rank == 0 or not distributed:
+        # Save the loss records to a CSV
+        df = pd.DataFrame(loss_records)
+        df.to_csv(f"experiment_results/{save_losses_csv_name}", index=False)
 
-    # Save the loss records to a CSV
-    df = pd.DataFrame(loss_records)
-    df.to_csv(f"experiment_results/{save_losses_csv_name}", index=False)
-
-    # Plot the training and validation loss curves
-    plt.figure(figsize=(10, 6))
-    plt.plot(train_losses, label='Training Loss')
-    plt.plot(val_losses, label='Validation Loss')
-    plt.title('Training and Validation Losses')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.savefig(f"experiment_results/{save_loss_curves_name}")
-    plt.show()
+        # Plot the training and validation loss curves
+        plt.figure(figsize=(10, 6))
+        plt.plot(train_losses, label='Training Loss')
+        plt.plot(val_losses, label='Validation Loss')
+        plt.title('Training and Validation Losses')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.savefig(f"experiment_results/{save_loss_curves_name}")
+        plt.show()        
 
 
 def train_nanogpt(model, train_data_loader, val_data_loader, num_epochs, args, device='cuda'):
     args["architecture"] = "nano_gpt"
     # Initialize wandb
     wandb.init(project="transformer-testing", config=args)
-
+    wandb.define_metric("epoch")
+    # set all other metrics to use this step
+    wandb.define_metric("*", step_metric="epoch")
+    
+    model.to(device)
     # Configuration for training
     weight_decay = 1e-1
     learning_rate = 6e-4
@@ -361,7 +456,7 @@ def train_nanogpt(model, train_data_loader, val_data_loader, num_epochs, args, d
 
         # Record losses and log them
         loss_records.append({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
-        wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
+        wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss}, step=epoch+1)
 
         # Save the best model
         if avg_val_loss < best_val_loss:
@@ -402,7 +497,11 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
         # track hyperparameters and run metadata
         config=args
     )
+    wandb.define_metric("epoch")
+    # set all other metrics to use this step
+    wandb.define_metric("*", step_metric="epoch")
 
+    model.to(device)
 
     best_val_loss = float('inf')
     train_losses = []
@@ -490,7 +589,7 @@ def train_shakespeare_transformer_xl(model, context_window, step_size, train_loa
             # Create dictionary of loss records, append to list of results
             loss_records.append({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
 
-            wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss})
+            wandb.log({'epoch': epoch+1, 'train_loss': avg_train_loss, 'val_loss': avg_val_loss}, step=epoch+1)
     
             # Save the best model
             if avg_val_loss < best_val_loss:
