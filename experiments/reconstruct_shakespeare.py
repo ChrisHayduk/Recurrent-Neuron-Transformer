@@ -113,18 +113,18 @@ if __name__ == "__main__":
     if args.model_name == 'StatefulTransformer':
         train_recurrent_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                                 context_window=args.max_seq_length, step_size=args.window_step_size,
-                                                optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                                optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
                                                 mask=False, save_model_name=save_model_name, 
                                                 save_loss_curves_name=save_loss_curves_name, 
                                                 save_losses_csv_name=save_losses_csv_name)
     elif args.model_name == 'NanoGPT':
-        train_nanogpt(model=model, device=device, train_data_loader = train_loader, 
-                      val_data_loader = test_loader, max_iters=args.max_iters, batch_size=args.batch_size)
+        train_nanogpt(model=model, train_data_loader = train_loader, 
+                      val_data_loader = test_loader, num_epochs=args.num_epochs, args=vars(args))
 
     elif args.model_name == 'TransformerXL':
         train_shakespeare_transformer_xl(model=model, train_loader=train_loader, eval_loader=test_loader,
                                          context_window=args.max_seq_length, step_size=args.window_step_size,
-                                         optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
+                                         optimizer=optimizer, num_epochs=args.num_epochs, device=device, args=vars(args), 
                                          save_model_name=save_model_name, save_loss_curves_name=save_loss_curves_name, 
                                          save_losses_csv_name=save_losses_csv_name)
 
@@ -132,6 +132,6 @@ if __name__ == "__main__":
         train_shakespeare_transformer(model=model, train_loader=train_loader, eval_loader=test_loader,
                                       context_window=args.max_seq_length, step_size=args.window_step_size,
                                       optimizer=optimizer, num_epochs=args.num_epochs, device=device, 
-                                      mask=False, save_model_name=save_model_name, 
+                                      args=vars(args), mask=False, save_model_name=save_model_name, 
                                       save_loss_curves_name=save_loss_curves_name, 
                                       save_losses_csv_name=save_losses_csv_name)
