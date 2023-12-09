@@ -15,8 +15,7 @@ class VanillaTransformerModel(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
 
         # Transformer Decoder
-        transformer_decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward)
-        self.transformer_decoder = nn.TransformerDecoder(transformer_decoder_layer, num_layers=num_decoder_layers)
+        self.transformer_decoder = nn.TransformerEncoder(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, num_layers=num_decoder_layers, batch_first = True)
 
         # Output layer
         self.out = nn.Linear(d_model, vocab_size)
@@ -38,11 +37,8 @@ class VanillaTransformerModel(nn.Module):
         tgt = self.embedding(tgt) * math.sqrt(self.d_model)
         tgt = self.pos_encoder(tgt)
 
-        # Initialize empty memory of zeros
-        memory = torch.zeros(tgt.size(0), tgt.size(1), self.d_model, device=tgt.device)
-
         # Since it's a decoder-only model, no encoder and memory
-        output = self.transformer_decoder(tgt, memory, tgt_mask=tgt_mask)
+        output = self.transformer_decoder(tgt, tgt_mask=tgt_mask)
         output = self.out(output)
         return output
 
