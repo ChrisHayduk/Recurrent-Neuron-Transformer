@@ -146,12 +146,13 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             config=args
         )
         wandb.define_metric("epoch")
-        wandb.define_metric("step")
-        
+        wandb.define_metric("train_batch")
+        wandb.define_metric("eval_batch")
+
         # set all other metrics to use this step
         wandb.define_metric("epoch/*", step_metric="epoch")
-        wandb.define_metric("batch/*", step_metric="step")
-
+        wandb.define_metric("train_batch/*", step_metric="train_batch")
+        wandb.define_metric("eval_batch/*", step_metric="eval_batch")
     
         best_val_loss = float('inf')
         train_losses = []
@@ -197,7 +198,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 batch_loss += loss.item()
 
                 if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 100 == 0 and batch_idx != 0)):
-                    wandb.log({'step': batch_idx, 'batch/train_loss': batch_loss}, step=batch_idx)
+                    wandb.log({'train_batch': batch_idx, 'train_batch/loss': batch_loss}, step=batch_idx)
 
             epoch_train_loss += batch_loss
             train_progress_bar.set_postfix(loss=batch_loss)
@@ -240,8 +241,8 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
 
                     batch_loss += loss.item()
 
-                    if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 50 == 0 and batch_idx != 0)):
-                        wandb.log({'step': batch_idx, 'batch/val_loss': batch_loss}, step=batch_idx)
+                    if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 100 == 0 and batch_idx != 0)):
+                        wandb.log({'eval_batch': batch_idx, 'eval_batch/loss': batch_loss}, step=batch_idx)
 
                 if args["model_name"] == "TransformerXL":
                     model.clear_memory()
