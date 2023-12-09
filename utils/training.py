@@ -29,10 +29,10 @@ from torch.distributed.fsdp.wrap import (
 )
 
 from utils.datasets import TextDataLoader
-from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, ModelConfig
+from models.vanilla_transformer_model import VanillaTransformer, VanillaModelConfig
+from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, RecurrentModelConfig
 from models.nanogpt_model import NanoGPT, GPTConfig
 from models.transformer_xl import TransformerXL
-from models.vanilla_transformer_model import VanillaTransformerModel
 
 
 def setup(rank, world_size):
@@ -65,7 +65,7 @@ def fsdp_main(rank, world_size, args):
             config_args[k] = v
 
     if args["model_name"] == "StatefulTransformer":
-        model_config = ModelConfig(max_length=args["max_seq_length"], vocab_size=vocab_size, 
+        model_config = RecurrentModelConfig(max_length=args["max_seq_length"], vocab_size=vocab_size, 
                                    n_layer=args["num_layers"], num_heads=args["nhead"], hidden_dim=args["dmodel"],
                                    dropout=args["dropout"], device=args["device"], recurrent_layers=args["recurrent_layers"])
         
@@ -82,9 +82,10 @@ def fsdp_main(rank, world_size, args):
                               mem_len=args.mem_len, dropout=args.dropout, device=rank)
         
     elif args["model_name"] == "VanillaTransformer":
-        model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args["max_seq_length"], d_model=args["dmodel"], 
-                                        nhead=args["nhead"], num_decoder_layers=args["num_layers"], 
-                                        dim_feedforward=args["dim_feedforward"])
+        model_config = VanillaModelConfig(max_length=args.max_seq_length, vocab_size=vocab_size, 
+                                   n_layer=args.num_layers, num_heads=args.nhead, hidden_dim=args.dmodel,
+                                   dropout=args.dropout, device=rank)
+        model = VanillaTransformer(config=model.config)
     
     else:
         raise NotImplementedError

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from models.recurrent_neuron_layer import RecurrentNeuronLayer
 
 @dataclass
-class ModelConfig:
+class RecurrentModelConfig:
     max_length: int = 1024
     vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
     n_layer: int = 12
