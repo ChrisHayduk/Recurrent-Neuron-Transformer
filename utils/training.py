@@ -224,6 +224,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
                 hidden_layers = dict()
+                mems = None
 
                 for i in range(0, input_chunk.size(1) - context_window, step_size):
                     # Create the input and target sequences
