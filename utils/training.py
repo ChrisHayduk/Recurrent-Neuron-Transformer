@@ -78,9 +78,8 @@ def fsdp_main(rank, world_size, args):
         model = NanoGPT(gptconf)
 
     elif args["model_name"] == "TransformerXL":
-        model = TransformerXL(vocab_size=vocab_size, chunk_size=args["chunk_size"], max_seq_length=args["max_seq_length"], 
-                              d_model=args["dmodel"], nhead=args["nhead"], num_layers=args["num_layers"], 
-                              dropout=args["dropout"])
+        model = TransformerXL(vocab_size=vocab_size, max_seq_length=args.max_seq_length, hidden_dim=args.dmodel, num_heads=args.nhead, num_layers=args.num_layers, 
+                              mem_len=args.mem_len, dropout=args.dropout, device=rank)
         
     elif args["model_name"] == "VanillaTransformer":
         model = VanillaTransformerModel(vocab_size=vocab_size, max_seq_length=args["max_seq_length"], d_model=args["dmodel"], 
@@ -132,8 +131,6 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
         )
         model.to(device)
         model = FSDP(model, auto_wrap_policy=my_auto_wrap_policy)
-        optimizer = None
-
         optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
     else:
         model.to(device)
@@ -172,7 +169,6 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             # print(f"Batch {batch_idx}, rank/device {device}") # Uncomment for debugging multiple GPUs
             batch_loss = 0
             hidden_layers = dict()
-            mems = None
 
             for i in range(0, input_chunk.size(1) - context_window, step_size):
                 # Create the input and target sequences
@@ -187,7 +183,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 if args["model_name"] == "StatefulTransformer":
                     (outputs, hidden_layers), loss = recurrent_transformer_forward(model, input_seq, hidden_layers, target_seq)
                 elif args["model_name"] == "TransformerXL":
-                    (outputs, mems), loss = transformer_xl_forward(model, input_seq, mems, target_seq)
+                    outputs, loss = transformer_xl_forward(model, input_seq, target_seq)
                 elif args["model_name"] == "VanillaTransformer":
                     outputs, loss = transformer_forward(model, input_seq, target_seq)
                 elif args["model_name"] == "NanoGPT":
@@ -224,7 +220,6 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
                 hidden_layers = dict()
-                mems = None
 
                 for i in range(0, input_chunk.size(1) - context_window, step_size):
                     # Create the input and target sequences
@@ -236,7 +231,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                     if args["model_name"] == "StatefulTransformer":
                         (outputs, hidden_layers), loss = recurrent_transformer_forward(model, input_seq, hidden_layers, target_seq)
                     elif args["model_name"] == "TransformerXL":
-                        (outputs, mems), loss = transformer_xl_forward(model, input_seq, mems, target_seq)
+                        outputs, loss = transformer_xl_forward(model, input_seq, target_seq)
                     elif args["model_name"] == "VanillaTransformer":
                         outputs, loss = transformer_forward(model, input_seq, target_seq)
                     elif args["model_name"] == "NanoGPT":
@@ -246,6 +241,9 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
 
                     if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 50 == 0 and batch_idx != 0)):
                         wandb.log({'step': batch_idx, 'batch/val_loss': batch_loss}, step=batch_idx)
+
+                if args["model_name"] == "TransformerXL":
+                    model.clear_memory()
 
                 epoch_val_loss += batch_loss
                 eval_progress_bar.set_postfix(loss=batch_loss)
@@ -317,17 +315,13 @@ def transformer_forward(model, input_seq, target_seq):
 
     return outputs, loss
 
-def transformer_xl_forward(model, input_seq, mems, target_seq):
-    outputs, mems = model(input_seq, mems)  # Update mems
-    
-    # Reshape outputs and target for CrossEntropyLoss
+def transformer_xl_forward(model, input_seq, target_seq):
+    outputs = model(input_seq)
     outputs = outputs.reshape(-1, outputs.size(-1))
     target_seq = target_seq.reshape(-1)
-    
-    # Calculate loss and backpropagate
     loss = nn.CrossEntropyLoss()(outputs, target_seq)
-
-    return (outputs, mems), loss
+    
+    return outputs, loss
 
 def nano_gpt_forward(model, input_seq, target_seq):
     outputs, loss = model(input_seq, target_seq)

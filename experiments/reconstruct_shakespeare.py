@@ -52,6 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_iters", type=float, default=0.0, help="Max iternations for NanoGPT")
     parser.add_argument("--recurrent_layers", type=str, default="all", help="Which layers to make recurrent in Recurrent Neuron Transformer. Possible values: all, qkv, proj, none")
     parser.add_argument("--distributed", type=bool, default=False, help="Whether to run training in distributed mode or on a single GPU")
+    parser.add_argument("--mem_len", type=int, default=100, help="Memory length for Transformer XL")
     args = parser.parse_args()
 
     print(os.getcwd())
@@ -104,9 +105,8 @@ if __name__ == "__main__":
         model = NanoGPT(gptconf)
     
     elif args.model_name == 'TransformerXL' and not args.distributed:
-        model = TransformerXL(vocab_size=vocab_size, chunk_size=args.chunk_size, max_seq_length=args.max_seq_length, 
-                              d_model=args.dmodel, nhead=args.nhead, num_layers=args.num_layers, 
-                              dropout=args.dropout)
+        model = TransformerXL(vocab_size=vocab_size, max_seq_length=args.max_seq_length, hidden_dim=args.dmodel, num_heads=args.nhead, num_layers=args.num_layers, 
+                              mem_len=args.mem_len, dropout=args.dropout, device=device)
 
     # Define the name of the best model and the loss curves
     save_model_name = f"{args.model_name}_best_model.pth"
