@@ -148,8 +148,11 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             config=args
         )
         wandb.define_metric("epoch")
+        wandb.define_metric("step")
+        
         # set all other metrics to use this step
         wandb.define_metric("epoch/*", step_metric="epoch")
+        wandb.define_metric("batch/*", step_metric="step")
 
     
         best_val_loss = float('inf')
@@ -197,7 +200,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 batch_loss += loss.item()
 
                 if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 100 == 0 and batch_idx != 0)):
-                    wandb.log({'step': batch_idx+1, 'batch/train_loss': batch_loss}, step=batch_idx+1)
+                    wandb.log({'step': batch_idx, 'batch/train_loss': batch_loss}, step=batch_idx)
 
             epoch_train_loss += batch_loss
             train_progress_bar.set_postfix(loss=batch_loss)
@@ -241,7 +244,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                     batch_loss += loss.item()
 
                     if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 50 == 0 and batch_idx != 0)):
-                        wandb.log({'step': batch_idx+1, 'batch/val_loss': batch_loss}, step=batch_idx+1)
+                        wandb.log({'step': batch_idx, 'batch/val_loss': batch_loss}, step=batch_idx)
 
                 epoch_val_loss += batch_loss
                 eval_progress_bar.set_postfix(loss=batch_loss)
