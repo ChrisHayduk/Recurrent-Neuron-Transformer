@@ -1,0 +1,94 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "StatefulTransformer",
+            "type": "python",
+            "request": "launch",
+            "module": "experiments.reconstruct_shakespeare",
+            "args": [
+                "--model_name=StatefulTransformer",
+                "--data_path=data/shakespeare/tinyshakespeare.txt",
+                "--num_epochs=5",
+                "--chunk_size=1024",
+                "--max_seq_length=512",
+                "--window_step_size=511",
+                "--num_layers=8",
+                "--nhead=8",
+                "--dmodel=768",
+                "--batch_size=12",
+                "--distributed=False",
+                "--dropout=0.1",
+                "--lr=0.0005"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "NanoGPT",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "module": "experiments.reconstruct_shakespeare",
+            "args": [
+                "--model_name=NanoGPT",
+                "--data_path=data/shakespeare/tinyshakespeare.txt",
+                "--num_epochs=1",
+                "--chunk_size=512",
+                "--max_seq_length=256",
+                "--window_step_size=128",
+                "--num_layers=8",
+                "--nhead=8",
+                "--nembd=768",
+                "--batch_size=12",
+                "--dropout=0.1",
+                "--lr=0.0005"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "TransformerXL",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "module": "experiments.reconstruct_shakespeare",
+            "args": [
+                "--model_name=TransformerXL",
+                "--data_path=data/shakespeare/tinyshakespeare.txt",
+                "--num_epochs=1",
+                "--chunk_size=1024",
+                "--max_seq_length=512",
+                "--window_step_size=511",
+                "--num_layers=8",
+                "--nhead=8",
+                "--dmodel=768",
+                "--batch_size=12",
+                "--dropout=0.1",
+                "--lr=0.0005",
+                "--mem_len=100"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "VanillaTransformer",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "module": "experiments.reconstruct_shakespeare",
+            "args": [
+                "--model_name=VanillaTransformer",
+                "--data_path=data/shakespeare/tinyshakespeare.txt",
+                "--num_epochs=1",
+                "--chunk_size=1024",
+                "--max_seq_length=512",
+                "--window_step_size=511",
+                "--num_layers=8",
+                "--nhead=8",
+                "--dmodel=768",
+                "--batch_size=12",
+                "--dropout=0.1",
+                "--lr=0.0005"
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}
