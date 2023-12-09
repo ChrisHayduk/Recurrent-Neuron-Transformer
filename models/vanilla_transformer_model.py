@@ -15,7 +15,8 @@ class VanillaTransformerModel(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
 
         # Transformer Decoder
-        self.transformer_decoder = nn.TransformerEncoder(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, num_layers=num_decoder_layers, batch_first = True)
+        transformer_encoder = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True)
+        self.transformer_decoder = nn.TransformerEncoder(transformer_encoder, num_layers=num_decoder_layers)
 
         # Output layer
         self.out = nn.Linear(d_model, vocab_size)
