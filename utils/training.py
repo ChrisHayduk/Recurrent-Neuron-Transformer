@@ -196,7 +196,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
 
                 batch_loss += loss.item()
 
-                if rank == 0 or not distributed and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 100 == 0 and batch_idx != 0)):
+                if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 100 == 0 and batch_idx != 0)):
                     wandb.log({'step': batch_idx+1, 'batch/train_loss': batch_loss}, step=batch_idx+1)
 
             epoch_train_loss += batch_loss
@@ -240,7 +240,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
 
                     batch_loss += loss.item()
 
-                    if rank == 0 or not distributed and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 50 == 0 and batch_idx != 0)):
+                    if (rank == 0 or not distributed) and (batch_idx == len(train_progress_bar)-1 or (batch_idx % 50 == 0 and batch_idx != 0)):
                         wandb.log({'step': batch_idx+1, 'batch/val_loss': batch_loss}, step=batch_idx+1)
 
                 epoch_val_loss += batch_loss
