@@ -39,7 +39,7 @@ class VanillaTransformerModel(nn.Module):
         tgt = self.pos_encoder(tgt)
 
         # Since it's a decoder-only model, no encoder and memory
-        output = self.transformer_decoder(tgt, tgt_mask=tgt_mask)
+        output = self.transformer_decoder(tgt, mask=tgt_mask, is_causal=True)
         output = self.out(output)
         return output
 
