@@ -311,15 +311,20 @@ def transformer_forward(model, input_seq, target_seq):
     outputs = outputs.reshape(-1, outputs.size(-1))
     target_seq = target_seq.reshape(-1)
 
-    # Calculate loss and backpropagate
+    # Calculate loss
     loss = nn.CrossEntropyLoss()(outputs, target_seq)
 
     return outputs, loss
 
 def transformer_xl_forward(model, input_seq, mems, target_seq):
     out = model(input_seq, target_seq, *mems)
-    loss = out[0].mean()
+    outputs = out[0]
     mems = out[1:]
+
+    # Calculate loss
+    outputs = outputs.reshape(-1, outputs.size(-1))
+    target_seq = target_seq.reshape(-1)
+    loss = nn.CrossEntropyLoss()(outputs, target_seq)
     
     return loss, mems
 

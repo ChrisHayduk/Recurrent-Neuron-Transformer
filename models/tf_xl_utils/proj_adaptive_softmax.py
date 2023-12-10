@@ -148,4 +148,4 @@ class ProjectedAdaptiveLogSoftmax(nn.Module):
 
                 offset += logprob_i.size(0)
 
-        return nll
+        return nll, logit

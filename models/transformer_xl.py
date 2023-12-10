@@ -587,6 +587,9 @@ class TransformerXL(nn.Module):
         self.same_length = same_length
         self.clamp_len = clamp_len
 
+        # Define final layer to project pred_hid to vocab_size
+        self.pred_hid = nn.Linear(d_model, n_token)
+
         self._create_params()
 
     def backward_compatible(self):
@@ -786,19 +789,12 @@ class TransformerXL(nn.Module):
         hidden, new_mems = self._forward(data, mems=mems)
 
         pred_hid = hidden[-tgt_len:]
-        if self.sample_softmax > 0 and self.training:
-            assert self.tie_weight
-            logit = sample_logits(self.word_emb,
-                self.out_layer.bias, target, pred_hid, self.sampler)
-            loss = -F.log_softmax(logit, -1)[:, :, 0]
-        else:
-            loss = self.crit(pred_hid.reshape(-1, pred_hid.size(-1)), target.reshape(-1))
-            loss = loss.view(tgt_len, -1)
+        loss, logit = self.crit(pred_hid.reshape(-1, pred_hid.size(-1)), target.reshape(-1))
 
         if new_mems is None:
-            return [loss]
+            return [logit]
         else:
-            return [loss] + new_mems
+            return [logit] + new_mems
 
 if __name__ == '__main__':
     import argparse
