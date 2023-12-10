@@ -7,6 +7,7 @@ import time
 import math
 import os
 import functools
+import re
 
 # Torch imports
 import torch
@@ -272,8 +273,10 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
                     try:
-                        print(f"Saving model to {gdrive_path}/{model.get_model_config()}/{save_model_name}")
-                        torch.save(model.module.state_dict(), f"{gdrive_path}/{model.get_model_config()}/{save_model_name}")
+                        model_path = f"{gdrive_path}/{model.get_model_config()}/{save_model_name}"
+                        model_path = re.sub(r"[^a-zA-Z0-9\s]", "_", model_path).replace(" ", "_")
+                        print(f"Saving model to {model_path}")
+                        torch.save(model.state_dict(), model_path)
                     except:
                         print("Error saving model to Google Drive")
                         pass
