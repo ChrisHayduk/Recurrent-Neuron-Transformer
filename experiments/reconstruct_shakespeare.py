@@ -55,6 +55,7 @@ if __name__ == "__main__":
     parser.add_argument("--xl_ext_len", type=int, default=0, help="Additional memory length for Transformer XL")
     parser.add_argument("--xl_attn_type", type=int, default=0, help="Attention type for Transformer XL")
     parser.add_argument("--xl_attn_dropout", type=float, default=0.0, help="Attention dropout for Transformer XL")
+    parser.add_argument("--gdrive_path", type=str, default="/content/drive/My Drive/recurrent-transformer-models/model_artifacts", help="Google drive path for model artifacts")
     args = parser.parse_args()
 
     print(os.getcwd())

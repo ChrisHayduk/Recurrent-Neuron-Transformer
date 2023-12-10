@@ -95,13 +95,13 @@ def fsdp_main(rank, world_size, args):
                                                 optimizer=None, num_epochs=args["num_epochs"], args=config_args, device=args["device"], 
                                                 mask=False, save_model_name=args["save_model_name"], 
                                                 save_loss_curves_name=args["save_loss_curves_name"], 
-                                                save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
+                                                save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1, gdrive_path=args["gdrive_path"])
         
     cleanup()
 
 def train_shakespeare(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs, args, device='cuda', mask=False,
                                             save_model_name='best_model.pth', save_loss_curves_name='loss_curves.png',
-                                            save_losses_csv_name='losses.csv', distributed = False, rank = -1, world_size = -1, sampler = None):
+                                            save_losses_csv_name='losses.csv', distributed = False, rank = -1, world_size = -1, sampler = None, gdrive_path = None):
     """
     Trains and validates a recurrent transformer model. Saves the best model based on validation loss and plots training curves.
 
@@ -271,6 +271,10 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 best_val_loss = avg_val_loss
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
+                    try:
+                        torch.save(model.module.state_dict(), f"{gdrive_path}/{model.get_model_config()}/{save_model_name}")
+                    except:
+                        pass
         if distributed:
             dist.barrier()
             states = model.state_dict()
