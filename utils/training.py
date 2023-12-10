@@ -272,8 +272,10 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
                     try:
+                        print(f"Saving model to {gdrive_path}/{model.get_model_config()}/{save_model_name}")
                         torch.save(model.module.state_dict(), f"{gdrive_path}/{model.get_model_config()}/{save_model_name}")
                     except:
+                        print("Error saving model to Google Drive")
                         pass
         if distributed:
             dist.barrier()

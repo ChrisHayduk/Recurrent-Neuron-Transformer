@@ -131,7 +131,8 @@ if __name__ == "__main__":
                                             optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
                                             mask=False, save_model_name=save_model_name, 
                                             save_loss_curves_name=save_loss_curves_name, 
-                                            save_losses_csv_name=save_losses_csv_name)
+                                            save_losses_csv_name=save_losses_csv_name,
+                                            gdrive_path=args.gdrive_path)
     else:
         print(f"Starting distributed run for {args.model_name}")
         WORLD_SIZE = torch.cuda.device_count()
