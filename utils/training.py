@@ -273,10 +273,10 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
                     try:
-                        model_path = f"{gdrive_path}/{model.get_model_config()}/{save_model_name}"
+                        model_path = f"{gdrive_path}/{model.get_model_config()}"
                         model_path = re.sub(r"[^a-zA-Z0-9\s]", "_", model_path).replace(" ", "_")
-                        print(f"Saving model to {model_path}")
-                        torch.save(model.state_dict(), model_path)
+                        print(f"Saving model to {model_path}/{save_model_name}")
+                        torch.save(model.state_dict(), {model_path}/{save_model_name})
                     except:
                         print("Error saving model to Google Drive")
                         pass
