@@ -141,6 +141,9 @@ class NanoGPT(nn.Module):
         # report number of parameters
         print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
 
+    def get_model_config(self):
+        return f"{self.__class__.__name__} - {self.config}"
+
     def get_num_params(self, non_embedding=True):
         """
         Return the number of parameters in the model.

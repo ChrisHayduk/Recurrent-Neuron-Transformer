@@ -145,6 +145,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             # track hyperparameters and run metadata
             config=args
         )
+        wandb.run.name = f"{model.get_model_config()}"
         wandb.define_metric("epoch")
         wandb.define_metric("train_batch")
         wandb.define_metric("eval_batch")

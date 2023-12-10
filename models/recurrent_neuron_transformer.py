@@ -153,7 +153,7 @@ class RecurrentNeuronTransformer(nn.Module):
         super(RecurrentNeuronTransformer, self).__init__()
         assert config.hidden_dim % config.num_heads == 0
         assert config.recurrent_layers in set(["qkv", "proj", "all", "none"])
-
+        self.config = config
         print(config)
         
         self.num_heads = config.num_heads
@@ -184,6 +184,9 @@ class RecurrentNeuronTransformer(nn.Module):
 
         # report number of parameters
         print("Number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+
+    def get_model_config(self):
+        return f"{self.__class__.__name__} - {self.config}"
 
     def get_num_params(self, non_embedding=True):
         """

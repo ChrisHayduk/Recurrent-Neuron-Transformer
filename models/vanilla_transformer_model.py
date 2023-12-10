@@ -130,6 +130,7 @@ class VanillaTransformer(nn.Module):
         assert config.hidden_dim % config.num_heads == 0
 
         print(config)
+        self.config = config
         
         self.num_heads = config.num_heads
         self.word_embedding_dim = config.hidden_dim
@@ -159,6 +160,9 @@ class VanillaTransformer(nn.Module):
 
         # report number of parameters
         print("Number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+
+    def get_model_config(self):
+        return f"{self.__class__.__name__} - {self.config}"
 
     def get_num_params(self, non_embedding=True):
         """

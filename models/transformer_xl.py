@@ -592,6 +592,18 @@ class TransformerXL(nn.Module):
 
         self._create_params()
 
+    def get_model_config(self):
+        config = TFXLConfig(
+            n_token=self.n_token,
+            n_layer=self.n_layer,
+            n_head=self.n_head,
+            d_model=self.d_model,
+            d_head=self.d_head,
+            d_embed=self.d_embed,
+            target_len=self.tgt_len
+        )
+        return f"{self.__class__.__name__} - {config}"
+
     def backward_compatible(self):
         self.sample_softmax = -1
 
