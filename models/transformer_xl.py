@@ -1,16 +1,27 @@
 import sys
 import math
 import functools
-
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from models.tf_xl_utils.proj_adaptive_softmax import ProjectedAdaptiveLogSoftmax
+from models.tf_xl_utils.log_uniform_sampler import LogUniformSampler, sample_logits
+from dataclasses import dataclass
 
-sys.path.append('utils')
-from tf_xl_utils.proj_adaptive_softmax import ProjectedAdaptiveLogSoftmax
-from tf_xl_utils.log_uniform_sampler import LogUniformSampler, sample_logits
+@dataclass
+class TFXLConfig:
+    n_token: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    n_layer: int = 2
+    n_head: int = 1
+    d_model: int = 512
+    d_head: int = 512
+    d_inner: int = 512
+    dropout: float = 0.0
+    dropatt: float = 0.0
+    tie_weight: bool = True
+    d_embed: int = 512
+    target_len: int = 1024
 
 class PositionalEmbedding(nn.Module):
     def __init__(self, demb):
@@ -492,7 +503,7 @@ class AdaptiveEmbedding(nn.Module):
 
         return embed
 
-class MemTransformerLM(nn.Module):
+class TransformerXL(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
                  dropout, dropatt, tie_weight=True, d_embed=None, 
                  div_val=1, tie_projs=[False], pre_lnorm=False,
@@ -500,7 +511,7 @@ class MemTransformerLM(nn.Module):
                  cutoffs=[], adapt_inp=False,
                  same_length=False, attn_type=0, clamp_len=-1, 
                  sample_softmax=-1):
-        super(MemTransformerLM, self).__init__()
+        super(TransformerXL, self).__init__()
         self.n_token = n_token
 
         d_embed = d_model if d_embed is None else d_embed
@@ -644,7 +655,10 @@ class MemTransformerLM(nn.Module):
 
         word_emb = self.word_emb(dec_inp)
 
-        mlen = mems[0].size(0) if mems is not None else 0
+        if mems is not None:
+            mlen = mems[0].size(0) 
+        else:
+            mlen = 0
         klen = mlen + qlen
         if self.same_length:
             all_ones = word_emb.new_ones(qlen, klen)
@@ -734,6 +748,33 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems
 
+    # def forward(self, data, *mems):
+    #     if not mems: 
+    #         mems = self.init_mems()
+
+    #     hidden, new_mems = self._forward(data, mems=mems)
+
+    #     # Get the predictions from the last hidden layer
+    #     pred_hid = hidden[-self.tgt_len:]
+
+    #     # If you are using softmax sampling, handle accordingly
+    #     if self.sample_softmax > 0 and self.training:
+    #         assert self.tie_weight
+    #         logit = sample_logits(self.word_emb, self.out_layer.bias, None, pred_hid, self.sampler)
+    #     else:
+    #         # Apply the linear layer (output layer) to get logits
+    #         logit = self.out_layer(pred_hid.view(-1, pred_hid.size(-1)))
+    #         logit = logit.view(self.tgt_len, -1, logit.size(-1))
+
+    #     # Apply softmax to convert logits to probabilities
+    #     probs = F.softmax(logit, dim=-1)
+
+    #     # Return the logits (or probabilities) and new_mems
+    #     if new_mems is None:
+    #         return [probs]
+    #     else:
+    #         return [probs] + new_mems
+
     def forward(self, data, target, *mems):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
@@ -751,7 +792,7 @@ class MemTransformerLM(nn.Module):
                 self.out_layer.bias, target, pred_hid, self.sampler)
             loss = -F.log_softmax(logit, -1)[:, :, 0]
         else:
-            loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
+            loss = self.crit(pred_hid.reshape(-1, pred_hid.size(-1)), target.reshape(-1))
             loss = loss.view(tgt_len, -1)
 
         if new_mems is None:
@@ -800,7 +841,7 @@ if __name__ == '__main__':
 
     for div_val in [1, 2]:
         for d_embed in [200, 100]:
-            model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
+            model = TransformerXL(args.n_token, args.n_layer, args.n_head,
                             args.d_model, args.d_head, args.d_inner, args.dropout,
                             dropatt=args.dropout, tie_weight=True, 
                             d_embed=d_embed, div_val=div_val, 

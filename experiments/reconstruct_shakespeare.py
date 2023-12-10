@@ -22,7 +22,7 @@ from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformer, VanillaModelConfig
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, RecurrentModelConfig
 from models.nanogpt_model import NanoGPT, GPTConfig
-from models.transformer_xl import TransformerXL
+from models.transformer_xl import TransformerXL, TFXLConfig
 from utils.training import train_shakespeare, fsdp_main
 
 # Set random seed for reproducibility
@@ -106,8 +106,11 @@ if __name__ == "__main__":
         model = NanoGPT(gptconf)
     
     elif args.model_name == 'TransformerXL' and not args.distributed:
-        model = TransformerXL(vocab_size=vocab_size, max_seq_length=args.max_seq_length, hidden_dim=args.dmodel, num_heads=args.nhead, num_layers=args.num_layers, 
-                              mem_len=args.mem_len, dropout=args.dropout, device=device)
+        model_config = dict(n_token=50304, n_layer=args.num_layers, n_head=args.nhead, 
+                            d_model=args.dmodel, d_head=args.dmodel//args.nhead, d_inner=args.dmodel,
+                            dropout=args.dropout, dropatt=args.dropout, 
+                            mem_len=args.chunk_size, ext_len=0, tgt_len=args.max_seq_length)
+        model = TransformerXL(**model_config)
 
     # Define the name of the best model and the loss curves
     save_model_name = f"{args.model_name}_best_model.pth"
