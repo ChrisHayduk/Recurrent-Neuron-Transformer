@@ -8,6 +8,9 @@ import math
 import os
 import functools
 
+# Import google colab
+from google.colab import drive
+
 # Torch imports
 import torch
 import torch.nn as nn
@@ -34,6 +37,8 @@ from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, Recu
 from models.nanogpt_model import NanoGPT, GPTConfig
 from models.transformer_xl import TransformerXL
 
+MODEL_ARTIFACT_GOOGLE_DRIVE_PATH = f"/content/drive/My Drive/recurrent-transformer-models"
+drive.mount('/content/drive')
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -271,6 +276,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 best_val_loss = avg_val_loss
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
+                    torch.save(model.state_dict(), f"{MODEL_ARTIFACT_GOOGLE_DRIVE_PATH}/{model.get_model_config()}/{save_model_name}")
         if distributed:
             dist.barrier()
             states = model.state_dict()
