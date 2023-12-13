@@ -7,6 +7,7 @@ import time
 import math
 import os
 import functools
+import re
 
 # Torch imports
 import torch
@@ -95,13 +96,13 @@ def fsdp_main(rank, world_size, args):
                                                 optimizer=None, num_epochs=args["num_epochs"], args=config_args, device=args["device"], 
                                                 mask=False, save_model_name=args["save_model_name"], 
                                                 save_loss_curves_name=args["save_loss_curves_name"], 
-                                                save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1)
+                                                save_losses_csv_name=args["save_losses_csv_name"], distributed=True, rank=rank, world_size=world_size, sampler=sampler1, gdrive_path=args["gdrive_path"])
         
     cleanup()
 
 def train_shakespeare(model, context_window, step_size, train_loader, eval_loader, optimizer, num_epochs, args, device='cuda', mask=False,
                                             save_model_name='best_model.pth', save_loss_curves_name='loss_curves.png',
-                                            save_losses_csv_name='losses.csv', distributed = False, rank = -1, world_size = -1, sampler = None):
+                                            save_losses_csv_name='losses.csv', distributed = False, rank = -1, world_size = -1, sampler = None, gdrive_path = None):
     """
     Trains and validates a recurrent transformer model. Saves the best model based on validation loss and plots training curves.
 
@@ -145,6 +146,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
             # track hyperparameters and run metadata
             config=args
         )
+        wandb.run.name = f"{model.get_model_config()}"
         wandb.define_metric("epoch")
         wandb.define_metric("train_batch")
         wandb.define_metric("eval_batch")
@@ -170,7 +172,8 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
         for batch_idx, (input_chunk, target_chunk) in enumerate(train_progress_bar):
             # print(f"Batch {batch_idx}, rank/device {device}") # Uncomment for debugging multiple GPUs
             batch_loss = 0
-            hidden_layers = dict()
+            hidden_layers = dict()  # RecurrentNeuronTransformer
+            mems = tuple()          # TransformerXL
 
             for i in range(0, input_chunk.size(1) - context_window, step_size):
                 # Create the input and target sequences
@@ -185,7 +188,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 if args["model_name"] == "StatefulTransformer":
                     (outputs, hidden_layers), loss = recurrent_transformer_forward(model, input_seq, hidden_layers, target_seq)
                 elif args["model_name"] == "TransformerXL":
-                    outputs, loss = transformer_xl_forward(model, input_seq, target_seq)
+                    loss, mems = transformer_xl_forward(model, input_seq, mems, target_seq)
                 elif args["model_name"] == "VanillaTransformer":
                     outputs, loss = transformer_forward(model, input_seq, target_seq)
                 elif args["model_name"] == "NanoGPT":
@@ -221,7 +224,8 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
         with torch.no_grad():
             for batch_idx, (input_chunk, target_chunk) in enumerate(eval_progress_bar):
                 batch_loss = 0
-                hidden_layers = dict()
+                hidden_layers = dict() # RecurrentNeuronTransformer
+                mems = tuple()         # TransformerXL
 
                 for i in range(0, input_chunk.size(1) - context_window, step_size):
                     # Create the input and target sequences
@@ -233,7 +237,7 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                     if args["model_name"] == "StatefulTransformer":
                         (outputs, hidden_layers), loss = recurrent_transformer_forward(model, input_seq, hidden_layers, target_seq)
                     elif args["model_name"] == "TransformerXL":
-                        outputs, loss = transformer_xl_forward(model, input_seq, target_seq)
+                        loss, mems = transformer_xl_forward(model, input_seq, mems, target_seq)
                     elif args["model_name"] == "VanillaTransformer":
                         outputs, loss = transformer_forward(model, input_seq, target_seq)
                     elif args["model_name"] == "NanoGPT":
@@ -243,9 +247,6 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
 
                 if (rank == 0 or not distributed) and (batch_idx == len(eval_progress_bar)-1 or (batch_idx % 10 == 0)):
                     wandb.log({'eval_batch': batch_idx, 'eval_batch/loss': batch_loss})
-
-                if args["model_name"] == "TransformerXL":
-                    model.clear_memory()
 
                 epoch_val_loss += batch_loss
                 eval_progress_bar.set_postfix(loss=batch_loss)
@@ -271,6 +272,14 @@ def train_shakespeare(model, context_window, step_size, train_loader, eval_loade
                 best_val_loss = avg_val_loss
                 if not distributed:
                     torch.save(model.state_dict(), f"experiment_results/{save_model_name}")
+                    try:
+                        model_folder_path = re.sub(r"[^a-zA-Z0-9\s]", "_", model.get_model_config()).replace(" ", "_")
+                        model_path = f"{gdrive_path}/{args['model_name']}_{model_folder_path}_{save_model_name}"
+                        print(f"Saving model to {model_path}")
+                        torch.save(model.state_dict(), model_path)
+                    except Exception as e:
+                        print(f"Error saving model to Google Drive: {e}")
+                        pass
         if distributed:
             dist.barrier()
             states = model.state_dict()
@@ -312,18 +321,22 @@ def transformer_forward(model, input_seq, target_seq):
     outputs = outputs.reshape(-1, outputs.size(-1))
     target_seq = target_seq.reshape(-1)
 
-    # Calculate loss and backpropagate
+    # Calculate loss
     loss = nn.CrossEntropyLoss()(outputs, target_seq)
 
     return outputs, loss
 
-def transformer_xl_forward(model, input_seq, target_seq):
-    outputs = model(input_seq)
+def transformer_xl_forward(model, input_seq, mems, target_seq):
+    out = model(input_seq, target_seq, *mems)
+    outputs = out[0]
+    mems = out[1:]
+
+    # Calculate loss
     outputs = outputs.reshape(-1, outputs.size(-1))
     target_seq = target_seq.reshape(-1)
     loss = nn.CrossEntropyLoss()(outputs, target_seq)
     
-    return outputs, loss
+    return loss, mems
 
 def nano_gpt_forward(model, input_seq, target_seq):
     outputs, loss = model(input_seq, target_seq)

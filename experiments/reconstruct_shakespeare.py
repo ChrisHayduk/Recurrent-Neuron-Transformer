@@ -22,7 +22,7 @@ from utils.datasets import TextDataLoader
 from models.vanilla_transformer_model import VanillaTransformer, VanillaModelConfig
 from models.recurrent_neuron_transformer import RecurrentNeuronTransformer, RecurrentModelConfig
 from models.nanogpt_model import NanoGPT, GPTConfig
-from models.transformer_xl import TransformerXL
+from models.transformer_xl import TransformerXL, TFXLConfig
 from utils.training import train_shakespeare, fsdp_main
 
 # Set random seed for reproducibility
@@ -52,7 +52,10 @@ if __name__ == "__main__":
     parser.add_argument("--max_iters", type=float, default=0.0, help="Max iternations for NanoGPT")
     parser.add_argument("--recurrent_layers", type=str, default="all", help="Which layers to make recurrent in Recurrent Neuron Transformer. Possible values: all, qkv, proj, none")
     parser.add_argument("--distributed", type=bool, default=False, help="Whether to run training in distributed mode or on a single GPU")
-    parser.add_argument("--mem_len", type=int, default=100, help="Memory length for Transformer XL")
+    parser.add_argument("--xl_ext_len", type=int, default=0, help="Additional memory length for Transformer XL")
+    parser.add_argument("--xl_attn_type", type=int, default=0, help="Attention type for Transformer XL")
+    parser.add_argument("--xl_attn_dropout", type=float, default=0.0, help="Attention dropout for Transformer XL")
+    parser.add_argument("--gdrive_path", type=str, default="/content/drive/My Drive/recurrent-transformer-models/model_artifacts", help="Google drive path for model artifacts")
     args = parser.parse_args()
 
     print(os.getcwd())
@@ -106,8 +109,11 @@ if __name__ == "__main__":
         model = NanoGPT(gptconf)
     
     elif args.model_name == 'TransformerXL' and not args.distributed:
-        model = TransformerXL(vocab_size=vocab_size, max_seq_length=args.max_seq_length, hidden_dim=args.dmodel, num_heads=args.nhead, num_layers=args.num_layers, 
-                              mem_len=args.mem_len, dropout=args.dropout, device=device)
+        model_config = dict(n_token=50304, n_layer=args.num_layers, n_head=args.nhead, attn_type=args.xl_attn_type,
+                            d_model=args.dmodel, d_head=args.dmodel//args.nhead, d_inner=args.dmodel,
+                            dropout=args.dropout, dropatt=args.xl_attn_dropout, 
+                            mem_len=args.chunk_size, ext_len=args.xl_ext_len, tgt_len=args.max_seq_length)
+        model = TransformerXL(**model_config)
 
     # Define the name of the best model and the loss curves
     save_model_name = f"{args.model_name}_best_model.pth"
@@ -125,7 +131,8 @@ if __name__ == "__main__":
                                             optimizer=optimizer, num_epochs=args.num_epochs, args=vars(args), device=device, 
                                             mask=False, save_model_name=save_model_name, 
                                             save_loss_curves_name=save_loss_curves_name, 
-                                            save_losses_csv_name=save_losses_csv_name)
+                                            save_losses_csv_name=save_losses_csv_name,
+                                            gdrive_path=args.gdrive_path)
     else:
         print(f"Starting distributed run for {args.model_name}")
         WORLD_SIZE = torch.cuda.device_count()
